@@ -6,7 +6,7 @@ A civic complaint intake and review application for **Hyderabad, through an inde
 
 Residents write rough notes, optionally add a photo, review an AI-assisted or manual draft, compare possible duplicates, follow an existing incident or submit a new report, and track staff decisions. Staff confirms content, category, and department; changes status through validated transitions; and links duplicates without merging or deleting records.
 
-New to the codebase? Start with the [beginner developer guide](docs/DEVELOPER_GUIDE.md). For portfolio preparation, see the [local readiness checklist](docs/PORTFOLIO.md).
+This README covers local setup, the resident/staff workflow, architecture, testing and project limitations.
 
 ## Release and verification status
 
@@ -79,7 +79,7 @@ The seed adds nine labeled synthetic reports and creates missing demo accounts. 
 5. Sign out and sign in as staff. Review the report, confirm its routing, and move it through the permitted status transitions with explanatory notes.
 6. Return as the resident to inspect the timeline and follow progress.
 
-For a complete walkthrough, see [the demo script](docs/DEMO.md). Stop the development server and user-space database with Ctrl+C in their respective terminals; persisted reports remain in `.data/mongo`.
+Stop the development server and user-space database with Ctrl+C in their respective terminals; persisted reports remain in `.data/mongo`.
 
 ## Troubleshooting
 
@@ -158,7 +158,7 @@ A candidate carries supporting location, time, service, and status facts. The hy
 
 No area filter excludes neighboring boundaries: this first release searches the single municipality, then computes geographic distance separately. Water/drainage are compatible and unknown categories are allowed in the ranker. The form requires a resident-selected category; a wrong confident category can still cause a miss. Different assets a few meters apart are not conflated when asset IDs are supplied. Without asset IDs, nearby distinct incidents remain a known failure case.
 
-Local exact search examines at most the 2,000 newest records and exposes truncation. Semantic results include only embeddings matching the current model/version/dimensions and content hash. Index coverage is reported; unindexed content is not silently assigned fake vectors. Atlas retrieves 40 candidates with `numCandidates=400`, refetches current documents, and reranks using the same rules. Partial index coverage, ANN misses, and eventual Atlas index propagation can reduce recall. See [Atlas and deployment](docs/DEPLOYMENT.md).
+Local exact search examines at most the 2,000 newest records and exposes truncation. Semantic results include only embeddings matching the current model/version/dimensions and content hash. Index coverage is reported; unindexed content is not silently assigned fake vectors. Atlas retrieves 40 candidates with `numCandidates=400`, refetches current documents, and reranks using the same rules. Partial index coverage, ANN misses, and eventual Atlas index propagation can reduce recall. Atlas setup is an optional advanced integration and remains unverified; use exact retrieval for the documented local workflow.
 
 Residents may follow any existing incident or continue with a new complaint. Staff alone can confirm duplicate links. Links point from a newer report to an earlier one to prevent cycles even under concurrent writes. Linking never merges, deletes, or synchronizes independent status histories.
 
@@ -198,13 +198,9 @@ Public complaint projections contain no emails, passwords, account IDs, raw note
 
 This is a single-instance portfolio architecture. In-memory rate limits must move to a shared store before scaling replicas. It has no password reset/email verification, notifications, resident post-submission editing, moderation workflow, automatic complaint archival, or real municipal integration. Timelines embedded in documents suit this bounded demonstration; long-lived high-volume histories need separate events and transactions. Evaluation data is synthetic and human review remains pending. Voice, image understanding, grounded guidance, autonomous staff agents, and fine-tuning are follow-up work.
 
-## Documentation
+## Further reading
 
-- [REST API and integration checks](docs/API.md)
-- [Deployment and Atlas setup](docs/DEPLOYMENT.md)
 - [Evaluation protocol and human-review rubric](evaluation/README.md)
-- [Portfolio case study](docs/CASE_STUDY.md)
-- [Three-minute demonstration script](docs/DEMO.md)
 - [Progress and verification ledger](PROGRESS.md)
 - [Original roadmap, preserved](ROADMAP.md)
 

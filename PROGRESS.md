@@ -135,3 +135,8 @@ Single-instance rate limiting; MongoDB binary photo storage; embedded timelines;
 - Refreshed dependency audit and applied patch fixes: sharp 0.35.5, Vitest 4.1.12 and concurrently 10.0.6. Audit now reports zero known vulnerabilities, superseding historical findings above.
 - Full checks after updates passed all 47 tests, TypeScript and production build. Offline evaluation rerun without provider calls. The existing bundle-size warning remains; browser, Docker and live-provider checks are not claimed.
 - First pre-commit review scanned 65 candidate source/documentation files for credential patterns, actual local secret values, personal filesystem paths and excluded data paths: no findings. Only `.env.example` is eligible for version control; `.env` and database files remain local.
+
+
+## Public documentation cleanup — 2026-10-19
+
+- Removed `docs/` from the current public source tree at the owner's request and ignored local copies. README retains setup, usage, architecture and testing instructions; removed links to the excluded folder. Earlier references above describe historical work. Previous commits still contain the documentation; no history rewrite was performed.

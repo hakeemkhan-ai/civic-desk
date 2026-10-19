@@ -7,7 +7,7 @@
 - `shared/domain.ts`: shared types, Zod schemas, categories and status transitions.
 - `scripts/`: database launcher, additive seeding, migration and reindexing commands.
 - `tests/`: automated tests; `evaluation/`: synthetic datasets and offline/live evaluation.
-- `docs/`: API reference, developer guide, demo checklist and portfolio case study. Record verification evidence in `PROGRESS.md`; preserve the original `ROADMAP.md`.
+- `README.md`: public setup, usage and architecture guide. Record verification evidence in `PROGRESS.md`; preserve the original `ROADMAP.md`. Keep local `docs/` untracked.
 
 ## Build, Test, and Development Commands
 
@@ -26,7 +26,7 @@ Use strict TypeScript, ES modules, two-space indentation and semicolons. Follow 
 
 ## Testing Guidelines
 
-Use Vitest and name tests `tests/*.test.ts`. Run `npm run test:unit` for isolated checks and `npm run test:integration` for Supertest/MongoDB and socket tests. Integration tests require local ports and may download MongoDB. No numeric coverage threshold is configured; cover changed behavior, authorization and failure paths. Follow `docs/DEMO.md` for browser checks; builds do not establish UI correctness.
+Use Vitest and name tests `tests/*.test.ts`. Run `npm run test:unit` for isolated checks and `npm run test:integration` for Supertest/MongoDB and socket tests. Integration tests require local ports and may download MongoDB. No numeric coverage threshold is configured; cover changed behavior, authorization and failure paths. Check resident/staff flows, map pinning, mobile layout, keyboard access and logout in a browser; builds do not establish UI correctness.
 
 ## Commit & Pull Request Guidelines
 
