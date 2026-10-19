@@ -1,0 +1,14 @@
+{
+  "name": "complaints_vector_v1",
+  "type": "vectorSearch",
+  "definition": {
+    "fields": [
+      { "type": "vector", "path": "embedding.vector", "numDimensions": 1536, "similarity": "cosine" },
+      { "type": "filter", "path": "municipality" },
+      { "type": "filter", "path": "embedding.model" },
+      { "type": "filter", "path": "embedding.version" },
+      { "type": "filter", "path": "embedding.dimensions" },
+      { "type": "filter", "path": "indexState" }
+    ]
+  }
+}

@@ -1,0 +1,6 @@
+ROADMAP.md
+evaluation/results/
+node_modules/
+dist/
+.cache/
+.data/
