@@ -10,7 +10,9 @@ This README covers local setup, the resident/staff workflow, architecture, testi
 
 ## Release and verification status
 
-The Next.js migration is implemented and verified locally for the workflows below. **This checkout is a demonstration, not a deployed production release.**
+The public demonstration is live at **[civic-desk-demo.onrender.com](https://civic-desk-demo.onrender.com)**, using Render Free and MongoDB Atlas Free in Singapore. AI is disabled; manual reporting and keyword duplicate comparison are available. This is an independent demonstration using synthetic data.
+
+Hosted HTTP verification (2026-10-20) passed Atlas-backed health, pages/deep links/assets, production CSP nonces, resident registration and resident/staff login, Secure cookies, manual reporting, idempotency, staff permissions/status history, following, private photo normalization/access and logout. A second deployment confirmed that accounts, reports, staff history, following and the private photo persist. The database contains nine seeded examples and one labeled synthetic deployment-verification report. Hosted browser interaction checks remain unverified because no browser is connected.
 
 Latest recheck (2026-10-20, Node 24.20.0): Next.js 16.4.2 type generation, TypeScript checking and the production Webpack build pass. **All 60 tests pass** (41 unit tests and 19 real MongoDB/socket integration tests). The built Next.js HTTP smoke passes page/deep-link/asset/CSP-nonce checks, resident/staff API workflows, `.env` port handling and graceful child shutdown against disposable MongoDB. `npm audit` reports zero known vulnerabilities. Offline evaluation passes without provider calls.
 
@@ -24,7 +26,7 @@ Historical Express/Vite baseline checks, before this migration:
 - Running Vite/API HTTP flow: login, AI-unavailable/manual submission, following, staff status update, and resident permission denial. Full report/timeline, following and session survive API/database restart; logout revokes the session. These are HTTP checks, not browser UI evidence.
 - Offline evaluation on 240 synthetic queries in 30 incident groups. Actual results: [`evaluation/results/offline.json`](evaluation/results/offline.json).
 
-Still unverified: comprehensive keyboard/200% zoom and browser photo/error-path coverage, Docker image execution, live OpenAI calls, and Atlas retrieval. No production service has been deployed. The migration preserves existing MongoDB formats and does not change the persistent local database.
+Still unverified: comprehensive keyboard/200% zoom and browser photo/error-path coverage, Docker image execution, live OpenAI calls, and Atlas Vector Search. Hosted MongoDB persistence uses Atlas with keyword retrieval; it does not establish Atlas Vector Search behavior. The migration preserves existing MongoDB formats and does not change the persistent local database.
 
 ## Local setup
 
@@ -109,6 +111,17 @@ The Docker image starts the Next.js web process. A second container using the sa
 Next.js development and production builds explicitly use Webpack so server-side `.js` imports resolve to their TypeScript sources while the worker and scripts remain compatible with Node/tsx. Pages render dynamically with a new script nonce per response; authenticated API data is never cached. The framework migration does not require a database migration: existing string IDs, session hashes, complaint documents, indexes and photos retain their formats.
 
 ## Free public demo: Render + MongoDB Atlas
+
+The current demo was created through Render's connector from the public GitHub
+`main` branch. Its settings are managed in Render; the Blueprint below is a
+reusable deployment template and is not linked to this existing service.
+Automatic deploys are off. After a code change passes CI, trigger a manual deploy
+from Render, or connect the GitHub repository and configure **After CI Checks
+Pass** in Render before relying on automatic updates. The current start command
+is `APP_ORIGIN="${APP_ORIGIN:-$RENDER_EXTERNAL_URL}" npm start`; it derives the
+HTTPS origin without putting credentials in the repository. Its HTTP health
+check is `/api/health`. Fresh private demo login credentials are kept in the
+operator's ignored `.env.hosted-demo` file, separate from local demo credentials.
 
 [`render.yaml`](render.yaml) defines one **Free** Node.js web service in Singapore,
 using Node 24.20.0 and deploying `main` after CI passes. Atlas is set up separately.
