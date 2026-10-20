@@ -1,1 +1,1 @@
-{ "extends": "./tsconfig.json", "include": ["client", "shared", "vite.config.ts"] }
+{ "extends": "./tsconfig.json", "include": ["next-env.d.ts", "app", "client", "shared", ".next/types/**/*.ts", ".next/dev/types/**/*.ts"] }

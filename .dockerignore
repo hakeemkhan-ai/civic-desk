@@ -1,5 +1,7 @@
 node_modules
 dist
+.next
+*.tsbuildinfo
 .git
 .env
 .env.*
@@ -7,3 +9,13 @@ dist
 .cache
 evaluation/cache
 *.log
+.agents
+.codex
+.aws
+.vscode
+.idea
+docs
+*.pem
+*.key
+*.p12
+*.pfx

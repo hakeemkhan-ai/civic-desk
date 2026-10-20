@@ -1,6 +1,7 @@
+'use client';
+
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
 import type { Location } from '../shared/domain';
 const city: L.LatLngExpression = [17.385, 78.4867];
 const pin = L.divIcon({ className: 'civic-map-pin', html: '<span></span>', iconSize: [26, 34], iconAnchor: [13, 34] });

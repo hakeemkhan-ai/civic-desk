@@ -3,13 +3,14 @@ import request from 'supertest';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { MongoClient, type Db } from 'mongodb';
 import { randomUUID } from 'node:crypto';
-import { createApp } from '../server/app.js';
+import { createApi } from '../server/app.js';
+import { httpServer } from './helpers/http-server.js';
 import { initialize, collections } from '../server/db.js';
 import { AIError, type AIProvider } from '../server/ai/provider.js';
 import { AIService } from '../server/ai/service.js';
 import { indexOne } from '../server/retrieval/worker.js';
 import { config } from '../server/config.js';
-let mongo: MongoMemoryServer, client: MongoClient, db: Db, app: ReturnType<typeof createApp>['app'];
+let mongo: MongoMemoryServer, client: MongoClient, db: Db, app: ReturnType<typeof httpServer>;
 let resident: ReturnType<typeof request.agent>,
   staff: ReturnType<typeof request.agent>,
   other: ReturnType<typeof request.agent>;
@@ -33,7 +34,7 @@ beforeAll(async () => {
   client = await new MongoClient(mongo.getUri(), { promoteBuffers: true }).connect();
   db = client.db('civic_test');
   await initialize(db);
-  app = createApp(db, null).app;
+  app = httpServer(createApi(db, null).handle);
   resident = request.agent(app);
   staff = request.agent(app);
   other = request.agent(app);
@@ -76,6 +77,20 @@ describe('real MongoDB HTTP lifecycle', () => {
         role: 'staff',
       })
       .expect(400);
+  });
+  it('issues an HttpOnly strict cookie and revokes the persisted session on logout', async () => {
+    const login = await request(app).post('/api/auth/login').set(headers)
+      .send({ email: 'resident@test.example', password: 'testing-password-123' }).expect(200);
+    const cookies = login.headers['set-cookie'] as unknown as string[];
+    expect(cookies).toHaveLength(1);
+    expect(cookies[0]).toContain('HttpOnly');
+    expect(cookies[0]).toContain('SameSite=Strict');
+    const cookie = cookies[0].split(';')[0];
+    await request(app).get('/api/auth/me').set('Cookie', cookie).expect(200);
+    const logout = await request(app).post('/api/auth/logout').set(headers)
+      .set('Cookie', cookie).expect(204);
+    expect(logout.headers['set-cookie'][0]).toContain('Max-Age=0');
+    await request(app).get('/api/auth/me').set('Cookie', cookie).expect(401);
   });
   it('persists once under concurrent retries and rejects reused keys with changed content', async () => {
     const key = randomUUID(),
@@ -121,6 +136,7 @@ describe('real MongoDB HTTP lifecycle', () => {
     await other.put(`/api/complaints/${complaintId}/follow`).set(headers).expect(200);
     const list = await other.get('/api/complaints?scope=following').expect(200);
     expect(list.body.total).toBe(1);
+    await other.get('/api/complaints?__proto__=untrusted&constructor=untrusted').expect(400);
   });
   it('enforces transition order and atomically records decisions', async () => {
     await staff
@@ -236,7 +252,7 @@ describe('real MongoDB HTTP lifecycle', () => {
         throw new AIError('provider_error');
       },
     };
-    const isolated = createApp(db, provider).app,
+    const isolated = httpServer(createApi(db, provider).handle),
       agent = request.agent(isolated);
     await agent
       .post('/api/auth/login')

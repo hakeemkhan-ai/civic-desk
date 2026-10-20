@@ -62,17 +62,21 @@ export async function indexOne(db: Db, ai: AIService) {
   return true;
 }
 export function startWorker(db: Db, ai: AIService) {
-  let active = false;
-  const timer = setInterval(async () => {
+  let active: Promise<void> | null = null;
+  const timer = setInterval(() => {
     if (active) return;
-    active = true;
-    try {
-      await indexOne(db, ai);
-    } catch {
-      console.error('Embedding worker operation failed; retry on next interval.');
-    } finally {
-      active = false;
-    }
+    active = (async () => {
+      try {
+        await indexOne(db, ai);
+      } catch {
+        console.error('Embedding worker operation failed; retry on next interval.');
+      } finally {
+        active = null;
+      }
+    })();
   }, 5000);
-  return () => clearInterval(timer);
+  return async () => {
+    clearInterval(timer);
+    await active;
+  };
 }

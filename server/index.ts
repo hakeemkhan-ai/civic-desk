@@ -1,21 +1,30 @@
 import { connect } from './db.js';
-import { createApp } from './app.js';
-import { config } from './config.js';
+import { makeProvider } from './ai/provider.js';
+import { AIService } from './ai/service.js';
 import { startWorker } from './retrieval/worker.js';
+import { assertRuntimeConfig } from './config.js';
+
+// Next.js owns HTTP. This persistent process owns embedding work so jobs do not
+// depend on a request remaining alive or a particular web instance receiving traffic.
+assertRuntimeConfig();
 const { db, client } = await connect();
-const { app, ai } = createApp(db);
-const server = app.listen(config.PORT, '0.0.0.0', () =>
-  console.log(
-    `Civic Desk API http://localhost:${config.PORT} · ${ai.provider ? 'AI configured' : 'manual / keyword mode'}`,
-  ),
-);
-server.requestTimeout = 60000;
+const ai = new AIService(db, makeProvider());
 const stop = startWorker(db, ai);
+console.log(
+  `Civic Desk embedding worker · ${ai.provider ? 'AI configured' : 'provider unavailable; jobs remain pending'}`,
+);
+let shuttingDown = false;
 async function shutdown() {
-  stop();
-  server.close();
+  if (shuttingDown) return;
+  shuttingDown = true;
+  await stop();
   await client.close();
-  process.exit(0);
 }
-process.once('SIGINT', shutdown);
-process.once('SIGTERM', shutdown);
+function onSignal() {
+  shutdown().catch(() => {
+    console.error('Embedding worker shutdown failed.');
+    process.exitCode = 1;
+  });
+}
+process.once('SIGINT', onSignal);
+process.once('SIGTERM', onSignal);

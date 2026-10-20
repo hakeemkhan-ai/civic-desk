@@ -1,6 +1,9 @@
-import React, { useState, useEffect, lazy, Suspense, type FormEvent, type ReactNode } from 'react';
-import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Link, NavLink, Routes, Route, useNavigate, useParams } from 'react-router';
+'use client';
+
+import { createContext, useContext, useState, useEffect, type FormEvent, type ReactNode } from 'react';
+import Link from 'next/link';
+import dynamic from 'next/dynamic';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   ArrowUpRight,
   ArrowRight,
@@ -39,9 +42,33 @@ import {
   type Status,
 } from '../shared/domain';
 import { api, body } from './api';
-import './styles.css';
 import { Charminar } from './Charminar';
-const LocationMap = lazy(() => import('./LocationMap'));
+const LocationMap = dynamic(() => import('./LocationMap'), {
+  ssr: false,
+  loading: () => <p role="status">Loading map…</p>,
+});
+
+const UserContext = createContext<UserView | null>(null);
+
+function useUser() {
+  const user = useContext(UserContext);
+  if (!user) throw new Error('A signed-in account is required.');
+  return user;
+}
+
+function NavigationLink({ href, children }: { href: string; children: ReactNode }) {
+  const pathname = usePathname();
+  const active = pathname === href;
+  return (
+    <Link
+      href={href}
+      className={active ? 'active' : undefined}
+      aria-current={active ? 'page' : undefined}
+    >
+      {children}
+    </Link>
+  );
+}
 
 const icons = {
   roads: Road,
@@ -85,7 +112,7 @@ function Field({ label, children, hint }: { label: string; children: ReactNode; 
     </label>
   );
 }
-function App() {
+export default function CivicDesk({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserView | null>(null),
     [loading, setLoading] = useState(true),
     [error, setError] = useState('');
@@ -110,12 +137,12 @@ function App() {
       </div>
     );
   return (
-    <BrowserRouter>
+    <>
       <a className="skip" href="#main">
         Skip to main content
       </a>
       <header className="topbar">
-        <Link className="brand" to="/">
+        <Link className="brand" href="/">
           <span className="brand-mark">
             <Charminar size={23} />
           </span>
@@ -143,26 +170,26 @@ function App() {
           <aside className="sidebar">
             <div className="sidebar-label">YOUR CIVIC DESK</div>
             <nav aria-label="Main navigation">
-              <NavLink to="/" end>
+              <NavigationLink href="/">
                 <Charminar size={19} />
                 Community reports
-              </NavLink>
-              <NavLink to="/following">
+              </NavigationLink>
+              <NavigationLink href="/following">
                 <Users size={19} />
                 Following
-              </NavLink>
-              <NavLink to="/mine">
+              </NavigationLink>
+              <NavigationLink href="/mine">
                 <FileText size={19} />
                 My reports
-              </NavLink>
+              </NavigationLink>
               {user.role === 'staff' && (
-                <NavLink to="/staff">
+                <NavigationLink href="/staff">
                   <ShieldCheck size={19} />
                   Staff review
-                </NavLink>
+                </NavigationLink>
               )}
             </nav>
-            <Link className="button primary report-nav" to="/report">
+            <Link className="button primary report-nav" href="/report">
               <Plus size={18} />
               Report an issue
             </Link>
@@ -181,32 +208,7 @@ function App() {
           </aside>
           <main id="main" className="main">
             <ErrorBox message={error} />
-            <Routes>
-              <Route path="/" element={<ReportList scope="all" user={user} />} />
-              <Route path="/following" element={<ReportList scope="following" user={user} />} />
-              <Route path="/mine" element={<ReportList scope="mine" user={user} />} />
-              <Route
-                path="/staff"
-                element={
-                  user.role === 'staff' ? (
-                    <ReportList scope="all" user={user} staff />
-                  ) : (
-                    <div className="empty">Staff access is required.</div>
-                  )
-                }
-              />
-              <Route path="/report" element={<ReportForm />} />
-              <Route path="/complaints/:id" element={<Detail user={user} />} />
-              <Route
-                path="*"
-                element={
-                  <div className="empty">
-                    <h1>Page not found</h1>
-                    <Link to="/">Go to community reports</Link>
-                  </div>
-                }
-              />
-            </Routes>
+            <UserContext.Provider value={user}>{children}</UserContext.Provider>
             <footer>
               Hyderabad demonstration service <span>Built for people. Reviewed by people.</span>
             </footer>
@@ -217,7 +219,7 @@ function App() {
           <Auth onLogin={setUser} />
         </main>
       )}
-    </BrowserRouter>
+    </>
   );
 }
 function Auth({ onLogin }: { onLogin: (u: UserView) => void }) {
@@ -392,7 +394,7 @@ function ReportList({
       <div className="page-heading">
         <div>
           <p className="eyebrow">
-            {staff ? 'BROOKFIELD · STAFF WORKSPACE' : `BROOKFIELD · COMMUNITY DESK`}
+            {staff ? 'HYDERABAD · STAFF WORKSPACE' : 'HYDERABAD · COMMUNITY DESK'}
           </p>
           <h1>{heading}</h1>
           <p>
@@ -402,7 +404,7 @@ function ReportList({
           </p>
         </div>
         {!staff && (
-          <Link className="button primary" to="/report">
+          <Link className="button primary" href="/report">
             <Plus size={18} />
             Report an issue
           </Link>
@@ -418,7 +420,7 @@ function ReportList({
               <br />
               Let’s get it to the right people.
             </p>
-            <Link to="/report">
+            <Link href="/report">
               Make a report <ArrowUpRight size={18} />
             </Link>
           </div>
@@ -500,12 +502,12 @@ function ReportList({
                 ? 'Open a community report and choose Follow for updates.'
                 : 'Try a different filter or be the first to report an issue.'}
             </p>
-            <Link to="/">Browse community reports</Link>
+            <Link href="/">Browse community reports</Link>
           </div>
         ) : (
           <div className="report-grid">
             {items.map((c) => (
-              <Link className="report-card" key={c.id} to={`/complaints/${c.id}`}>
+              <Link className="report-card" key={c.id} href={`/complaints/${c.id}`}>
                 <div className="card-top">
                   <CategoryIcon category={c.content.category} />
                   <Badge status={c.status} />
@@ -576,8 +578,8 @@ const emptyReport: Report = {
   location: { label: '', area: 'unknown', precision: 'unknown', lat: null, lng: null, assetId: '' },
   observedAt: null,
 };
-function ReportForm() {
-  const navigate = useNavigate();
+export function ReportForm() {
+  const router = useRouter();
   const [mapOpen, setMapOpen] = useState(false);
   const [report, setReport] = useState<Report>(emptyReport),
     [content, setContent] = useState<Content>({ title: '', description: '', category: 'roads' }),
@@ -660,7 +662,7 @@ function ReportForm() {
         headers: { 'Idempotency-Key': key },
         body: body({ original: report, content, draftId: draft?.id ?? null, photoId: uploadId }),
       });
-      navigate(`/complaints/${c.id}`);
+      router.push(`/complaints/${c.id}`);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -674,7 +676,7 @@ function ReportForm() {
   }
   return (
     <>
-      <Link className="back-link" to="/">
+      <Link className="back-link" href="/">
         <ChevronLeft size={16} />
         Community reports
       </Link>
@@ -757,7 +759,9 @@ function ReportForm() {
               </div>
               <details className="location-details" onToggle={(e) => setMapOpen(e.currentTarget.open)}>
                 <summary>Pin on map (optional)</summary>
-                {mapOpen && <Suspense fallback={<p role="status">Loading map…</p>}><LocationMap location={report.location} onChange={setLocation} /></Suspense>}
+                {mapOpen && (
+                  <LocationMap location={report.location} onChange={setLocation} />
+                )}
               </details>
               <details className="location-details">
                 <summary>Add coordinates or an asset number (optional)</summary>
@@ -957,7 +961,7 @@ function ReportForm() {
                     }}
                     onFollow={async () => {
                       await api(`/complaints/${candidate.complaint.id}/follow`, { method: 'PUT' });
-                      navigate(`/complaints/${candidate.complaint.id}`);
+                      router.push(`/complaints/${candidate.complaint.id}`);
                     }}
                   />
                 ))
@@ -1074,7 +1078,7 @@ function CandidateCard({
         <Badge status={c.status} />
       </div>
       <h3>
-        <Link to={`/complaints/${c.id}`} target="_blank" rel="noreferrer">
+        <Link href={`/complaints/${c.id}`} target="_blank" rel="noreferrer">
           {c.content.title}
           <ArrowUpRight size={15} />
         </Link>
@@ -1161,8 +1165,8 @@ function CandidateCard({
     </article>
   );
 }
-function Detail({ user }: { user: UserView }) {
-  const { id } = useParams();
+export function ReportDetail({ id }: { id: string }) {
+  const user = useUser();
   const [c, setC] = useState<ComplaintView | null>(null),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
@@ -1211,7 +1215,7 @@ function Detail({ user }: { user: UserView }) {
     );
   return (
     <>
-      <Link className="back-link" to={user.role === 'staff' ? '/staff' : '/'}>
+      <Link className="back-link" href={user.role === 'staff' ? '/staff' : '/'}>
         <ChevronLeft size={16} />
         Back to reports
       </Link>
@@ -1243,7 +1247,9 @@ function Detail({ user }: { user: UserView }) {
               <CategoryIcon category={c.content.category} />
             </div>
             <p className="report-body">{c.content.description}</p>
-            {c.location.lat !== null && c.location.lng !== null && <Suspense fallback={<p role="status">Loading location…</p>}><LocationMap location={c.location} /></Suspense>}
+            {c.location.lat !== null && c.location.lng !== null && (
+              <LocationMap location={c.location} />
+            )}
             <dl className="facts">
               <div>
                 <dt>Category</dt>
@@ -1265,7 +1271,7 @@ function Detail({ user }: { user: UserView }) {
             {c.duplicateOf && (
               <div className="notice">
                 Staff linked this report to{' '}
-                <Link to={`/complaints/${c.duplicateOf}`}>an existing incident</Link>. Both reports
+                <Link href={`/complaints/${c.duplicateOf}`}>an existing incident</Link>. Both reports
                 keep their own history.
               </div>
             )}
@@ -1294,7 +1300,7 @@ function Detail({ user }: { user: UserView }) {
             )}
           </section>
           {user.role === 'staff' && (
-            <StaffReview key={`${c.id}:${c.version}`} complaint={c} onUpdate={setC} />
+            <StaffReview key={c.id} complaint={c} onUpdate={setC} />
           )}
         </div>
         <section className="panel timeline-panel">
@@ -1353,6 +1359,18 @@ function StaffReview({
     [busy, setBusy] = useState(''),
     [error, setError] = useState(''),
     [matches, setMatches] = useState<DuplicateResult | null>(null);
+  const nextStatuses = transitions[c.status];
+  const nextStatus = nextStatuses.includes(status) ? status : nextStatuses[0];
+  useEffect(() => {
+    setStatus(transitions[c.status][0]);
+  }, [c.status]);
+  useEffect(() => {
+    // Refresh after staff decisions; following a report must preserve unsaved edits.
+    setContent(c.content);
+    setDepartment(c.department ?? c.departmentSuggestion);
+    setMatches(null);
+    setError('');
+  }, [c.version, c.content, c.department, c.departmentSuggestion]);
   async function action(name: string, fn: () => Promise<void>) {
     setBusy(name);
     setError('');
@@ -1452,8 +1470,8 @@ function StaffReview({
       <h3>Update status</h3>
       <div className="field-row">
         <Field label="Next status">
-          <select value={status} onChange={(e) => setStatus(e.target.value as Status)}>
-            {transitions[c.status].map((s) => (
+          <select value={nextStatus} onChange={(e) => setStatus(e.target.value as Status)}>
+            {nextStatuses.map((s) => (
               <option key={s} disabled={s === 'assigned' && !c.reviewed}>
                 {s}
               </option>
@@ -1462,13 +1480,13 @@ function StaffReview({
         </Field>
         <button
           className="secondary align-bottom"
-          disabled={!!busy || note.trim().length < 5 || (status === 'assigned' && !c.reviewed)}
+          disabled={!!busy || note.trim().length < 5 || (nextStatus === 'assigned' && !c.reviewed)}
           onClick={() =>
             action('status', async () =>
               onUpdate(
                 await api<ComplaintView>(`/complaints/${c.id}/status`, {
                   method: 'POST',
-                  body: body({ status, note, version: c.version }),
+                  body: body({ status: nextStatus, note, version: c.version }),
                 }),
               ),
             )
@@ -1539,8 +1557,17 @@ function StaffReview({
     </section>
   );
 }
-createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-);
+
+export function ReportsPage({
+  scope = 'all',
+  staff = false,
+}: {
+  scope?: 'all' | 'mine' | 'following';
+  staff?: boolean;
+}) {
+  const user = useUser();
+  if (staff && user.role !== 'staff') {
+    return <div className="empty">Staff access is required.</div>;
+  }
+  return <ReportList scope={scope} user={user} staff={staff} />;
+}

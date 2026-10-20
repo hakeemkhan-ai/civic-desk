@@ -23,8 +23,13 @@ const Env = z.object({
   KEYWORD_THRESHOLD: z.coerce.number().min(0).max(1).default(0.35),
 });
 export const config = Env.parse(process.env);
-if (
-  config.NODE_ENV === 'production' &&
-  (!process.env.APP_ORIGIN || !config.APP_ORIGIN.startsWith('https://'))
-)
-  throw new Error('Production requires an explicit HTTPS APP_ORIGIN');
+
+// Next.js imports route modules while building. Validate deployment-only
+// requirements when a web runtime or worker starts, rather than during bundling.
+export function assertRuntimeConfig() {
+  if (
+    config.NODE_ENV === 'production' &&
+    (!process.env.APP_ORIGIN || !config.APP_ORIGIN.startsWith('https://'))
+  )
+    throw new Error('Production requires an explicit HTTPS APP_ORIGIN');
+}

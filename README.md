@@ -2,7 +2,7 @@
 
 ![Charminar mark](public/charminar.svg)
 
-A civic complaint intake and review application for **Hyderabad, through an independent demonstration service**. React + TypeScript, Express, MongoDB, and the official OpenAI SDK. It does not send reports to a real municipality. Use synthetic information.
+A civic complaint intake and review application for **Hyderabad, through an independent demonstration service**. Next.js App Router + React + TypeScript, MongoDB, and the official OpenAI SDK. Next.js serves both pages and the same-origin API; a separate Node.js worker indexes reports. It does not send reports to a real municipality. Use synthetic information.
 
 Residents write rough notes, optionally add a photo, review an AI-assisted or manual draft, compare possible duplicates, follow an existing incident or submit a new report, and track staff decisions. Staff confirms content, category, and department; changes status through validated transitions; and links duplicates without merging or deleting records.
 
@@ -10,11 +10,13 @@ This README covers local setup, the resident/staff workflow, architecture, testi
 
 ## Release and verification status
 
-Application implementation is present. **This checkout is not yet an end-to-end verified release.** Local npm connectivity and socket binding now work; backend and real MongoDB checks have run successfully. Browser rendering and interaction have not yet been verified.
+The Next.js migration is implemented and verified locally for the workflows below. **This checkout is a demonstration, not a deployed production release.**
 
-Latest recheck (2026-10-19): type checking, production build and **all 47 tests** pass (29 unit tests, 16 real MongoDB HTTP tests and two database-launch port checks). Integration tests passed outside the socket-restricted sandbox. After patch updates to sharp, Vitest and concurrently, `npm audit` reports zero known vulnerabilities. Browser interaction remains unverified. Historical persistence evidence below is from 2026-10-16.
+Latest recheck (2026-10-20, Node 24.20.0): Next.js 16.4.2 type generation, TypeScript checking and the production Webpack build pass. **All 60 tests pass** (41 unit tests and 19 real MongoDB/socket integration tests). The built Next.js HTTP smoke passes page/deep-link/asset/CSP-nonce checks, resident/staff API workflows, `.env` port handling and graceful child shutdown against disposable MongoDB. `npm audit` reports zero known vulnerabilities. Offline evaluation passes without provider calls.
 
-Previously verified in this environment:
+Controlled Chromium browser scenarios also passed desktop resident login, manual reporting, duplicate comparison, keyboard map panning, pin selection/clearing, submission and following; 390px mobile navigation; and staff review, consecutive status updates, logout and protected-page reload. No unhandled page errors were captured. Evidence and limits are recorded in [`PROGRESS.md`](PROGRESS.md).
+
+Historical Express/Vite baseline checks, before this migration:
 
 - Full TypeScript check and server/client production build.
 - 45 tests: 29 unit/provider-contract tests and 16 real MongoDB HTTP integration tests covering authorization, idempotency, status transitions, private uploads, feedback, duplicate links, and stale indexing protection.
@@ -22,11 +24,11 @@ Previously verified in this environment:
 - Running Vite/API HTTP flow: login, AI-unavailable/manual submission, following, staff status update, and resident permission denial. Full report/timeline, following and session survive API/database restart; logout revokes the session. These are HTTP checks, not browser UI evidence.
 - Offline evaluation on 240 synthetic queries in 30 incident groups. Actual results: [`evaluation/results/offline.json`](evaluation/results/offline.json).
 
-Still unverified: browser lifecycle/mobile/keyboard/zoom checks, Docker image, live OpenAI calls, and Atlas retrieval. See [`PROGRESS.md`](PROGRESS.md) for current evidence and remaining dependency-audit findings. No production service has been deployed.
+Still unverified: comprehensive keyboard/200% zoom and browser photo/error-path coverage, Docker image execution, live OpenAI calls, and Atlas retrieval. No production service has been deployed. The migration preserves existing MongoDB formats and does not change the persistent local database.
 
 ## Local setup
 
-Requirements: Node.js 24 LTS (minimum 22.12), npm, and MongoDB 7+ or Docker. Initial dependency and MongoDB-binary downloads require internet access.
+Requirements: Node.js 24 (matching CI), npm, and MongoDB 7+ or Docker. Initial dependency and MongoDB-binary downloads require internet access.
 
 ```sh
 git clone https://github.com/hakeemkhan-ai/civic-desk.git
@@ -60,7 +62,7 @@ npm run seed
 npm run dev
 ```
 
-Open **http://localhost:5173**. The Vite client proxies `/api` to Express on port 3001. Use exactly the origin in `APP_ORIGIN`; changing to `127.0.0.1` without updating that value causes mutation requests to be rejected.
+Open **http://localhost:5173**. `npm run dev` starts Next.js on port 5173 and a separate embedding worker. Next.js handles pages and `/api` in one server; no Express server or Vite proxy is needed. Use exactly the origin in `APP_ORIGIN`; changing to `127.0.0.1` without updating that value causes mutation requests to be rejected. The development web port is fixed at 5173; `PORT` configures the production web port.
 
 Demo accounts:
 
@@ -84,10 +86,27 @@ Stop the development server and user-space database with Ctrl+C in their respect
 ## Troubleshooting
 
 - **Port 27017 already in use:** keep your existing MongoDB running and skip `dev:db`, or stop the conflicting service. Never delete database files to resolve a port conflict.
-- **Database connection refused:** start MongoDB before seeding or starting Express; check `MONGODB_URI`.
+- **Database connection refused:** start MongoDB before seeding or starting Next.js; check `MONGODB_URI`.
 - **Login fails after changing the demo password:** seeding preserves existing account passwords; `.env` changes only affect newly seeded accounts.
 - **API rejects a write:** use the browser origin configured in `APP_ORIGIN` (default `http://localhost:5173`).
 - **AI or map tiles unavailable:** manual drafting and coordinate entry remain available. Tiles require internet access; AI requires a server-side key and incurs provider charges.
+
+## Production processes
+
+Build once, then run the web server and embedding worker as separate supervised processes with the same MongoDB and provider configuration:
+
+```sh
+npm run build
+NODE_ENV=production APP_ORIGIN=https://your-demo.example PORT=3001 npm start
+# In a second terminal or process supervisor:
+NODE_ENV=production APP_ORIGIN=https://your-demo.example npm run worker:start
+```
+
+Terminate TLS at a trusted reverse proxy forwarding to the web port. Production requires an explicit HTTPS `APP_ORIGIN`; cookies are Secure. The production launcher loads `.env` before selecting `PORT` (default 3001), with exported environment values taking precedence, and always runs Next.js in production mode. It forwards termination signals to Next.js.
+
+The Docker image starts the Next.js web process. A second container using the same image can override its command with `npm run worker:start`; **disable its inherited HTTP health check** with `docker run --no-healthcheck ... <image> npm run worker:start`, or `healthcheck: { disable: true }` in Compose. The worker binds no HTTP port. Keep worker restarts independent of web requests. This setup targets a persistent Node.js deployment; a serverless web deployment still needs a separately hosted worker.
+
+Next.js development and production builds explicitly use Webpack so server-side `.js` imports resolve to their TypeScript sources while the worker and scripts remain compatible with Node/tsx. Pages render dynamically with a new script nonce per response; authenticated API data is never cached. The framework migration does not require a database migration: existing string IDs, session hashes, complaint documents, indexes and photos retain their formats.
 
 ## Hyderabad map and existing data
 
@@ -112,18 +131,20 @@ Review the configurable per-million-token pricing assumptions before use. Defaul
 
 Drafts use the Responses API, `store:false`, `responses.parse`, Zod structured output, explicit refusal/incomplete handling, and validation of verbatim evidence. Schema validity does not guarantee factual accuracy. Notes are untrusted data, never application instructions; the model has no action tools. The UI requires review before submission. Photos are stored privately and are **not sent to the model**. The form explains that notes and location are sent when AI drafting is requested; semantic comparison also embeds approved text when configured.
 
-An embedded worker leases pending complaint documents, writes embeddings only if the content hash and lease token still match, and retries at most three job attempts. Without a provider it leaves work pending. Edits invalidate embeddings atomically. After changing embedding models, dimensions, or preprocessing versions, or to retry failed indexing:
+A separate persistent worker leases pending complaint documents, writes embeddings only if the content hash and lease token still match, and retries at most three job attempts. Next.js request handlers never start background polling. Development starts the worker automatically; production runs it separately with `npm run worker:start`. Without a provider it leaves work pending. Edits invalidate embeddings atomically. After changing embedding models, dimensions, or preprocessing versions, or to retry failed indexing:
 
 ```sh
 npm run embeddings:retry
 ```
 
-This requeues incompatible/failed records; keep the API running to process them. Inspect aggregate indexing/AI outcomes with authenticated staff `GET /api/staff/metrics`. The app does not present token counts or model names to residents.
+This requeues incompatible/failed records; keep the worker running to process them. Inspect aggregate indexing/AI outcomes with authenticated staff `GET /api/staff/metrics`. The app does not present token counts or model names to residents.
 
 ## Architecture and boundaries
 
 - `shared/domain.ts`: category/status contract, input and draft schemas, versioned demo directory.
-- `server/app.ts`, `auth.ts`, `complaints.ts`, `db.ts`: REST validation, database-backed sessions, permissions, atomic complaint writes and audit events, private/public projections.
+- `app/`: Next.js layouts, pages and Node-runtime API route handlers. Navigation uses Next.js routing; the interactive Leaflet map loads only in the browser.
+- `server/app.ts`, `auth.ts`, `complaints.ts`, `db.ts`: native Request/Response REST validation, database-backed sessions, permissions, atomic complaint writes and audit events, private/public projections.
+- `server/runtime.ts`: cached web-process MongoDB connection and API services. `server/index.ts`: independent persistent worker entrypoint.
 - `server/ai/`: versioned prompt, official SDK adapter, refusal/error handling, budget reservations, operation telemetry.
 - `server/retrieval/`: keyword and cosine functions, interpretable incident rules, exact/Atlas candidate retrieval, leased indexing worker.
 - `evaluation/`: deterministic synthetic fixture generation, development-only threshold selection, held-out scoring, actual provider evaluation and cache.
@@ -131,7 +152,7 @@ This requeues incompatible/failed records; keep the API running to process them.
 
 ```mermaid
 flowchart LR
-  Resident[Resident / staff browser] -->|Same-origin REST + session cookie| API[Express API]
+  Resident[Resident / staff browser] -->|Next.js pages and same-origin REST + session cookie| API[Next.js route handlers]
   API --> Auth[Authorization + request validation]
   Auth --> Complaints[Complaint service]
   Complaints --> Mongo[(MongoDB)]
@@ -182,11 +203,12 @@ npm run typecheck
 npm run test:unit             # Deterministic / explicitly mocked AI contracts; no MongoDB needed
 npm run test:integration      # Actual temporary mongod + HTTP permissions/lifecycle/race tests
 npm run build
+npm run test:next             # After build: actual Next.js production HTTP smoke, disposable MongoDB
 npm run eval                  # Offline template and keyword measurements, zero provider calls
 npm run eval:live             # Real provider calls, costs money; requires OPENAI_API_KEY
 ```
 
-Integration tests use disposable data in a real temporary MongoDB process. The first test run downloads its MongoDB binary; `MONGOMS_SYSTEM_BINARY` can select an installed `mongod`. `npm run check` runs the full type, test, and production-build sequence. See [evaluation protocol](evaluation/README.md) for provenance, split rules, metrics, limitations, and human rubric. Do not treat offline failure-contract mocks as live AI validation.
+Integration tests use disposable data in a real temporary MongoDB process. The first test run downloads its MongoDB binary; `MONGOMS_SYSTEM_BINARY` can select an installed `mongod`. `npm run check` runs the full type, test, and production-build sequence. After that, `npm run test:next` starts the built Next.js server against a fresh temporary MongoDB, checks deep links/assets/script nonces and the actual API workflow, then shuts both processes down. It uses synthetic accounts, disables provider calls, and never changes the persistent local database. Its HTTP checks do not establish browser interaction or visual correctness. See [evaluation protocol](evaluation/README.md) for provenance, split rules, metrics, limitations, and human rubric. Do not treat offline failure-contract mocks as live AI validation.
 
 The committed offline result is intentionally unflattering: the lexical baseline confuses similar text at different places. Semantic improvement is **unverified** until a live run is measured. The exact result JSON records fixture hash, models, versions, frozen development threshold, per-query rows, false matches, latency, and cost.
 
@@ -196,7 +218,7 @@ All protected endpoints require a current MongoDB-backed session; sensitive writ
 
 Public complaint projections contain no emails, passwords, account IDs, raw notes, AI draft history, or private photo URLs. Basic email/phone redaction is a defense in depth, **not complete PII detection**. Public report text, staff notes, and location still need human care. Do not use real sensitive data in this demo. AI telemetry stores model, versions, timing, usage, outcome, and estimated cost without report bodies; it expires after 90 days. Original reports and attachments have no automatic retention policy in this release; plan deletion/retention procedures before real use. Unattached uploads may remain after abandoned submissions.
 
-This is a single-instance portfolio architecture. In-memory rate limits must move to a shared store before scaling replicas. It has no password reset/email verification, notifications, resident post-submission editing, moderation workflow, automatic complaint archival, or real municipal integration. Timelines embedded in documents suit this bounded demonstration; long-lived high-volume histories need separate events and transactions. Evaluation data is synthetic and human review remains pending. Voice, image understanding, grounded guidance, autonomous staff agents, and fine-tuning are follow-up work.
+This is a single-instance portfolio architecture. In-memory rate limits must move to a shared store before scaling replicas. Native request handlers have no socket peer address: anonymous traffic shares a conservative bucket unless `TRUST_PROXY_HOPS` is configured behind an ingress that overwrites the trusted `X-Forwarded-For` chain. Never enable proxy trust on a directly accessible server; spoofed forwarding headers must not become client identities. Authenticated traffic is counted per verified account. It has no password reset/email verification, notifications, resident post-submission editing, moderation workflow, automatic complaint archival, or real municipal integration. Timelines embedded in documents suit this bounded demonstration; long-lived high-volume histories need separate events and transactions. Evaluation data is synthetic and human review remains pending. Voice, image understanding, grounded guidance, autonomous staff agents, and fine-tuning are follow-up work.
 
 ## Further reading
 
