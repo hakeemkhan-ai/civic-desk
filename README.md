@@ -108,6 +108,69 @@ The Docker image starts the Next.js web process. A second container using the sa
 
 Next.js development and production builds explicitly use Webpack so server-side `.js` imports resolve to their TypeScript sources while the worker and scripts remain compatible with Node/tsx. Pages render dynamically with a new script nonce per response; authenticated API data is never cached. The framework migration does not require a database migration: existing string IDs, session hashes, complaint documents, indexes and photos retain their formats.
 
+## Free public demo: Render + MongoDB Atlas
+
+[`render.yaml`](render.yaml) defines one **Free** Node.js web service in Singapore,
+using Node 24.20.0 and deploying `main` after CI passes. Atlas is set up separately.
+This configuration leaves AI disabled: manual reports, keyword duplicate search,
+staff review, maps and private photo uploads remain available. An embedding worker
+is unnecessary until a provider is enabled. No worker, disk or paid database is
+included in the Blueprint.
+
+1. Create a **Free** Atlas cluster, preferably in Singapore to match the web service.
+   Use a new `civic_desk_demo` database for synthetic demo data. Create a database
+   user with `readWrite` only on that database. Copy its driver connection string,
+   URL-encode credentials as instructed by Atlas, and include `/civic_desk_demo`
+   before the query string. Store it privately; never commit it or paste it into an
+   issue. Existing local data is not uploaded by this setup.
+2. In Render, connect this GitHub repository and create a **Blueprint** using
+   `render.yaml` from `main`. Check that the only resource is a **Free** web service.
+   Supply the Atlas URI when prompted for `MONGODB_URI`. The Blueprint derives
+   `APP_ORIGIN` from Render's assigned HTTPS URL, and the launcher uses Render's
+   `PORT`. The service name appears twice in the file; if you change it, update
+   both occurrences so the origin reference still resolves.
+3. Open the new Render service's **Connect → Outbound** list. Add all its CIDR
+   ranges to Atlas **Network Access**. Add your current local IP temporarily if
+   you will seed from your computer. An initial health check can fail until this
+   allowlist is configured; redeploy after updating it. Keep access scoped to these
+   ranges instead of opening the database to all addresses.
+4. Seed synthetic examples once from your local checkout. Free Render services do
+   not provide a remote shell. Create a private, gitignored `.env.render` file with
+   the hosted `MONGODB_URI`, an empty `OPENAI_API_KEY`, and a new `DEMO_PASSWORD`
+   of at least 12 characters; restrict its permissions with `chmod 600 .env.render`.
+   Then run the existing guarded seed command locally:
+
+   ```sh
+   DOTENV_CONFIG_PATH=.env.render NODE_ENV=development DEMO_ACCOUNTS=true npm run seed
+   ```
+
+   The explicit development/demo flags apply only to this one-time local command;
+   Render keeps `NODE_ENV=production` and `DEMO_ACCOUNTS=false`. Ensure exported
+   `MONGODB_URI`/`DEMO_PASSWORD` values do not override the file. Seeding is additive
+   and preserves existing passwords. Remove the temporary local IP allowlist entry
+   and the private file when finished. Keep the staff password private; public
+   visitors can register their own resident accounts.
+5. Verify the assigned HTTPS URL in a browser: `/api/health` returns
+   `{"ok":true}`, `/api/config` has `draftingAvailable: false`, resident registration
+   and login work, a manual report persists, a photo is accessible only to its
+   owner or staff, staff can review/update it, and logout blocks protected views.
+   Redeploy and confirm the report and photo survive. Test mobile map pinning and
+   keyboard access on the hosted site before sharing the link.
+
+The initial `TRUST_PROXY_HOPS=0` conservatively shares anonymous request/sign-in
+limits across visitors. Verify Render's live forwarded-address chain, including a
+request with a supplied `X-Forwarded-For`, before trusting a proxy hop. Do not
+increase it just to bypass a 429. A custom domain also requires updating
+`APP_ORIGIN` to that exact HTTPS origin and using it consistently for login/writes.
+
+Render's [free service limits](https://render.com/docs/free) include sleeping after
+15 idle minutes, cold starts and usage quotas. Atlas's
+[Free cluster limits](https://www.mongodb.com/docs/atlas/reference/free-shared-limitations/)
+include 512 MB shared storage; photos count toward it. Stay on free plans, leave
+paid add-ons disabled, and use synthetic data. This is a demonstration deployment.
+Later, enabling AI requires a server-side provider key, a spending limit and a
+separately hosted `npm run worker:start` process; Atlas Vector Search is optional.
+
 ## Hyderabad map and existing data
 
 Use **Pin on map** in the report form to select or drag a position. Keyboard users can focus the map, pan with arrow keys and select **Use map center**. Clear pin removes both coordinates. Manual landmarks and coordinates remain available if map tiles fail. Location precision remains your choice; pins are not verified observations. North/central/south are informal demo groupings, not administrative zones.

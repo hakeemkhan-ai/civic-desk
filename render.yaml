@@ -1,0 +1,36 @@
+# Free manual-mode demo. MongoDB Atlas is configured separately.
+# No worker, paid database, disk, or provider calls are provisioned here.
+services:
+  - type: web
+    name: civic-desk-demo
+    runtime: node
+    plan: free
+    region: singapore
+    branch: main
+    autoDeployTrigger: checksPass
+    buildCommand: npm ci --include=dev --no-audit --no-fund && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: '24.20.0'
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_TELEMETRY_DISABLED
+        value: '1'
+      - key: APP_ORIGIN
+        fromService:
+          type: web
+          name: civic-desk-demo
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: MONGODB_URI
+        sync: false
+      - key: DEMO_ACCOUNTS
+        value: 'false'
+      - key: OPENAI_API_KEY
+        value: ''
+      - key: RETRIEVAL_MODE
+        value: exact
+      # Keep anonymous limits shared until the live forwarding chain is verified.
+      - key: TRUST_PROXY_HOPS
+        value: '0'
