@@ -359,6 +359,9 @@ test('list network recovery, CSRF and expired-session errors are visible', async
     ).status(),
   ).toBe(403);
   await page.goto(`/complaints/${data.report._id}`);
+  const follow = page.getByRole('button', { name: 'Follow this report', exact: true });
+  // Expire a loaded session, not the initial /auth/me request that hydrates the page.
+  await expect(follow).toBeEnabled();
   const client = await verificationDatabase().connect();
   try {
     await client
@@ -368,7 +371,7 @@ test('list network recovery, CSRF and expired-session errors are visible', async
   } finally {
     await client.close();
   }
-  await page.getByRole('button', { name: 'Follow this report', exact: true }).click();
+  await follow.click();
   await expect(page.getByRole('main').getByRole('alert')).toContainText(/session|sign in/i);
   await page.reload();
   await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
