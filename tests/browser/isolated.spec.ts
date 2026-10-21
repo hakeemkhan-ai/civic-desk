@@ -1,4 +1,5 @@
 import { test as base, expect } from '@playwright/test';
+import { setTimeout as delay } from 'node:timers/promises';
 import { resetFixture, verificationDatabase, type FixtureData } from './data.js';
 import type { Complaint } from '../../server/db.js';
 import { assertAccessible, assertReflow, compare, login, manualDraft } from './helpers.js';
@@ -47,6 +48,7 @@ test('registration, secure session, manual fallback, filters, following and logo
       .first()
       .evaluate((s) => s.nonce),
   ).toBe(nonce);
+  await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
   await assertAccessible(page);
   await page.getByRole('button', { name: 'New here?' }).click();
   await page.getByLabel('Your name').fill('Synthetic registered resident');
@@ -74,6 +76,9 @@ test('registration, secure session, manual fallback, filters, following and logo
   await page.getByRole('combobox', { name: 'Filter by status' }).selectOption('submitted');
   await page.getByRole('link', { name: /Synthetic library pothole/ }).click();
   await page.getByRole('button', { name: 'Follow this report', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: 'Following · unfollow', exact: true }),
+  ).toBeVisible();
   await page.getByRole('navigation').getByRole('link', { name: 'Following', exact: true }).click();
   await expect(page).toHaveURL('/following');
   await expect(page.getByRole('heading', { name: data.report.content.title })).toBeVisible();
@@ -86,6 +91,7 @@ test('registration, secure session, manual fallback, filters, following and logo
   await expect(page.getByText('Staff access is required.', { exact: true })).toBeVisible();
   expect((await page.request.get('/api/staff/metrics')).status()).toBe(403);
   await page.getByRole('button', { name: 'Sign out' }).click();
+  await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
   expect((await page.request.get('/api/complaints')).status()).toBe(401);
@@ -179,6 +185,7 @@ test('oversized, malformed and unsupported photos fail safely; other residents c
     await page.getByRole('button', { name: 'Back', exact: true }).click();
   }
   await page.getByRole('button', { name: 'Sign out' }).click();
+  await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
   await login(page, data, 2);
   await page.goto(`/complaints/${data.report._id}`);
   await expect(page.getByRole('heading', { name: data.report.content.title })).toBeVisible();
@@ -302,8 +309,12 @@ test('staff edits survive following, review and consecutive statuses; stale upda
     .getByLabel('Decision note', { exact: false })
     .fill('Synthetic staff decision retained between updates.');
   await page.getByRole('button', { name: 'Follow this report', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: 'Following · unfollow', exact: true }),
+  ).toBeVisible();
   await expect(page.getByLabel('Approved title')).toHaveValue('Synthetic staff-approved pothole');
   await page.getByRole('button', { name: 'Following · unfollow', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Follow this report', exact: true })).toBeVisible();
   await expect(page.getByLabel('Approved description')).toHaveValue(
     'Synthetic verified description beside the demonstration library.',
   );
@@ -406,7 +417,13 @@ test('desktop, phone and 320px reflow have named controls, keyboard access and n
       });
     }
   }
+  // Deliberately slow authentication to exercise boot -> ready keyboard navigation.
+  await page.route('**/api/auth/me', async (route) => {
+    await delay(250);
+    await route.continue();
+  });
   await page.goto('/report');
+  await expect(page.getByLabel('What’s happening?', { exact: false })).toBeVisible();
   await page.keyboard.press('Tab');
   await expect(page.getByRole('link', { name: 'Skip to main content' })).toBeFocused();
   await page.keyboard.press('Enter');

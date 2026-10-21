@@ -107,6 +107,7 @@ for (const role of ['RESIDENT', 'STAFF'] as const) {
       .toBe(true);
     await assertReflow(page);
     await page.getByRole('button', { name: 'Sign out' }).click();
+    await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
     await page.reload();
     await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
     expect(errors).toEqual([]);
