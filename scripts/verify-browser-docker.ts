@@ -6,7 +6,13 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { request } from '@playwright/test';
 import { resetFixture, verificationDatabase } from '../tests/browser/data.js';
-import { cancellationScope, freePort, run, until } from './verification/process.js';
+import {
+  cancellationScope,
+  freePort,
+  run,
+  until,
+  verifyBrowserEvidence,
+} from './verification/process.js';
 
 // Explicit project, file and env-file prevent Compose from discovering .env or normal compose.yaml.
 const id = randomBytes(6).toString('hex');
@@ -69,6 +75,9 @@ let api: Awaited<ReturnType<typeof request.newContext>> | undefined;
 let mongoClient: ReturnType<typeof verificationDatabase> | undefined;
 try {
   assert.equal(process.versions.node.split('.')[0], '24', 'Use Node 24, matching CI.');
+  evidence.commit = await run('git', ['rev-parse', 'HEAD'], { quiet: true });
+  await mkdir('.cache/browser-verification', { recursive: true });
+  await writeFile('.cache/browser-verification/docker.json', JSON.stringify(evidence, null, 2));
   try {
     await docker(['info', '--format', '{{.ServerVersion}}']);
   } catch {
@@ -98,7 +107,6 @@ try {
       { mode: 0o600 },
     );
   await writeEnvironment(3001);
-  evidence.commit = await run('git', ['rev-parse', 'HEAD'], { quiet: true });
   await compose(['config', '--quiet']);
   created = true;
   await compose(['build', 'web'], 600_000, false);
@@ -251,7 +259,10 @@ try {
       signal: cancellation.signal,
     },
   );
-  passed('Chromium browser scenarios against the production Docker image over HTTPS');
+  await verifyBrowserEvidence();
+  passed(
+    'Chromium browser scenarios against the production Docker image over HTTPS, with HTML/JSON evidence',
+  );
   evidence.result = 'passed';
 } catch (error) {
   evidence.result = 'failed';

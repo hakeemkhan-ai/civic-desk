@@ -8,7 +8,14 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { cancellationScope, freePort, run, stop, until } from './verification/process.js';
+import {
+  cancellationScope,
+  freePort,
+  run,
+  stop,
+  until,
+  verifyBrowserEvidence,
+} from './verification/process.js';
 
 const directory = await mkdtemp(join(tmpdir(), 'civic-browser-'));
 const cancellation = cancellationScope();
@@ -121,6 +128,7 @@ try {
       signal: cancellation.signal,
     },
   );
+  await verifyBrowserEvidence();
   console.log(
     'PASS isolated production browser suite. Docker execution and manual review remain separate.',
   );

@@ -1,4 +1,7 @@
 import { defineConfig } from '@playwright/test';
+import { resolve } from 'node:path';
+
+const artifacts = resolve(import.meta.dirname, '../../.cache/browser-verification');
 
 const baseURL = process.env.VERIFY_BASE_URL;
 if (!baseURL || !/^https:\/\/localhost:\d+$/.test(baseURL)) {
@@ -16,11 +19,11 @@ export default defineConfig({
   timeout: 60_000,
   globalTimeout: 12 * 60_000,
   expect: { timeout: 10_000 },
-  outputDir: '../../.cache/browser-verification/results',
+  outputDir: resolve(artifacts, 'results'),
   reporter: [
     ['list'],
-    ['html', { outputFolder: '.cache/browser-verification/report', open: 'never' }],
-    ['json', { outputFile: '.cache/browser-verification/browser.json' }],
+    ['html', { outputFolder: resolve(artifacts, 'report'), open: 'never' }],
+    ['json', { outputFile: resolve(artifacts, 'browser.json') }],
   ],
   use: {
     browserName: 'chromium',

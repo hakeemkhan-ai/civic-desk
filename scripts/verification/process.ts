@@ -1,6 +1,8 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
+import assert from 'node:assert/strict';
+import { access, readFile } from 'node:fs/promises';
 
 export async function freePort() {
   const server = createServer();
@@ -109,4 +111,12 @@ export async function stop(child: ChildProcess | undefined) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+export async function verifyBrowserEvidence() {
+  const report = JSON.parse(await readFile('.cache/browser-verification/browser.json', 'utf8'));
+  assert(report.stats.expected > 0, 'Browser evidence must contain executed passing scenarios.');
+  for (const key of ['unexpected', 'skipped', 'flaky']) assert.equal(report.stats[key], 0);
+  assert.equal(report.errors.length, 0);
+  await access('.cache/browser-verification/report/index.html');
 }
