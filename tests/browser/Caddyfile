@@ -1,0 +1,7 @@
+{
+  auto_https disable_redirects
+}
+https://localhost:8443 {
+  tls internal
+  reverse_proxy web:{$VERIFY_WEB_PORT}
+}

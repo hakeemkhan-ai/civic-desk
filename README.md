@@ -106,9 +106,25 @@ NODE_ENV=production APP_ORIGIN=https://your-demo.example npm run worker:start
 
 Terminate TLS at a trusted reverse proxy forwarding to the web port. Production requires an explicit HTTPS `APP_ORIGIN`; cookies are Secure. The production launcher loads `.env` before selecting `PORT` (default 3001), with exported environment values taking precedence, and always runs Next.js in production mode. It forwards termination signals to Next.js.
 
-The Docker image starts the Next.js web process. A second container using the same image can override its command with `npm run worker:start`; **disable its inherited HTTP health check** with `docker run --no-healthcheck ... <image> npm run worker:start`, or `healthcheck: { disable: true }` in Compose. The worker binds no HTTP port. Keep worker restarts independent of web requests. This setup targets a persistent Node.js deployment; a serverless web deployment still needs a separately hosted worker.
+The Docker image starts the Next.js web process. A second container using the same image can override its command with `node --import tsx server/index.ts`; **disable its inherited HTTP health check** with `docker run --no-healthcheck ... <image> node --import tsx server/index.ts`, or `healthcheck: { disable: true }` in Compose. Direct Node execution makes the worker the signal-receiving process. The worker binds no HTTP port. Keep worker restarts independent of web requests. This setup targets a persistent Node.js deployment; a serverless web deployment still needs a separately hosted worker.
 
 Next.js development and production builds explicitly use Webpack so server-side `.js` imports resolve to their TypeScript sources while the worker and scripts remain compatible with Node/tsx. Pages render dynamically with a new script nonce per response; authenticated API data is never cached. The framework migration does not require a database migration: existing string IDs, session hashes, complaint documents, indexes and photos retain their formats.
+
+## Browser and Docker verification
+
+After `npm ci` and `npx playwright install --with-deps chromium`, run
+`npm run verify:browser-docker` with Node 24 and a working Docker daemon. It builds
+the actual production image and runs container lifecycle and Chromium checks over
+isolated HTTPS with disposable MongoDB, synthetic data and AI disabled. CI runs
+this alongside the existing checks and retains synthetic evidence for seven days.
+
+`npm run verify:browser` runs the same browser scenarios against a disposable
+production Node server when Docker is unavailable. It does not verify the image.
+`npm run test:ui:hosted -- --env-file .env.hosted-demo` checks existing hosted
+accounts and records with application writes blocked except login/logout and
+without persistent browser artifacts. See the [verification guide](tests/browser/MANUAL.md)
+for prerequisites, private credentials, cleanup, headed review, keyboard checks
+and the separate actual 200% browser zoom checklist.
 
 ## Free public demo: Render + MongoDB Atlas
 

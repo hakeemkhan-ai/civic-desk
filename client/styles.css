@@ -50,7 +50,8 @@ a:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible,
-summary:focus-visible {
+summary:focus-visible,
+.timeline:focus-visible {
   outline: 3px solid #b87b2c;
   outline-offset: 3px;
 }
@@ -643,7 +644,7 @@ footer {
   gap: 5px;
   font-size: 12px;
   text-decoration: none;
-  color: #70806a;
+  color: #53684e;
   margin-bottom: 23px;
 }
 .steps {
@@ -1484,6 +1485,9 @@ figcaption {
   }
 }
 @media (max-width: 520px) {
+  nav {
+    flex-wrap: wrap;
+  }
   .report-grid {
     grid-template-columns: 1fr;
     gap: 15px;

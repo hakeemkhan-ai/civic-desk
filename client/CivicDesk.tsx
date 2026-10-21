@@ -1307,7 +1307,7 @@ export function ReportDetail({ id }: { id: string }) {
           <p className="eyebrow">EVERY STEP, IN THE OPEN</p>
           <h2>Report timeline</h2>
           <p className="muted">Updates from the people handling this report.</p>
-          <ol className="timeline">
+          <ol className="timeline" tabIndex={0} aria-label="Report history">
             {c.timeline.map((event, i) => (
               <li key={event.id}>
                 <span className={`timeline-dot ${i === c.timeline.length - 1 ? 'latest' : ''}`}>

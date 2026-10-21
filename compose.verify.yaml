@@ -1,0 +1,66 @@
+# Only scripts/verify-browser-docker.ts supplies these values. Never uses the local demo volume.
+services:
+  mongo:
+    image: mongo:7.0.24
+    ports:
+      - '127.0.0.1:${VERIFY_MONGO_PORT:?required}:27017'
+    volumes:
+      - verify_mongo:/data/db
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', 'db.adminCommand({ping:1}).ok']
+      interval: 2s
+      timeout: 5s
+      retries: 30
+  web:
+    image: ${VERIFY_IMAGE:?required}
+    build: .
+    environment: &app_environment
+      NODE_ENV: production
+      PORT: ${VERIFY_WEB_PORT:?required}
+      APP_ORIGIN: https://localhost:${VERIFY_HTTPS_PORT:?required}
+      MONGODB_URI: mongodb://mongo:27017/${VERIFY_DB:?required}
+      OPENAI_API_KEY: ''
+      DEMO_ACCOUNTS: 'false'
+      RETRIEVAL_MODE: exact
+      TRUST_PROXY_HOPS: '0'
+      NEXT_TELEMETRY_DISABLED: '1'
+    ports:
+      - '127.0.0.1:${VERIFY_HTTP_PORT:?required}:${VERIFY_WEB_PORT:?required}'
+    depends_on:
+      mongo:
+        condition: service_healthy
+    # Keep the actual image health command; shorten only scheduling for outage tests.
+    healthcheck:
+      interval: 2s
+      timeout: 8s
+      start_period: 10s
+      retries: 2
+    stop_grace_period: 15s
+  tls:
+    image: caddy:2.11.2-alpine
+    environment:
+      VERIFY_WEB_PORT: ${VERIFY_WEB_PORT:?required}
+    ports:
+      - '127.0.0.1:${VERIFY_HTTPS_PORT:?required}:8443'
+    volumes:
+      - ./tests/browser/Caddyfile:/etc/caddy/Caddyfile:ro
+      - verify_caddy:/data
+      - verify_caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+  worker:
+    profiles: ['worker']
+    image: ${VERIFY_IMAGE:?required}
+    environment: *app_environment
+    command: ['node', '--import', 'tsx', 'server/index.ts']
+    healthcheck:
+      disable: true
+    depends_on:
+      mongo:
+        condition: service_healthy
+    stop_grace_period: 15s
+volumes:
+  verify_mongo:
+  verify_caddy:
+  verify_caddy_config:

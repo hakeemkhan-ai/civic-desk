@@ -13,7 +13,8 @@ export default function LocationMap({ location, onChange }: Props) {
   const editable = !!onChange;
   useEffect(() => {
     if (!host.current) return;
-    const m = L.map(host.current, { scrollWheelZoom: false }).setView(city, 12);
+    // Leaflet's animated zoom timeout can outlive a collapsed/unmounted picker.
+    const m = L.map(host.current, { scrollWheelZoom: false, zoomAnimation: false }).setView(city, 12);
     map.current = m;
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
