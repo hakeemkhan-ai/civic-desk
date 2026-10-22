@@ -52,9 +52,13 @@ test('registration, secure session, manual fallback, filters, following and logo
   await assertAccessible(page);
   await page.getByRole('button', { name: 'New here?' }).click();
   await page.getByLabel('Your name').fill('Synthetic registered resident');
+  await page.getByLabel('Invitation code', { exact: false }).fill(data.invitation);
   await page.getByLabel('Email address').fill('registered@browser.example');
   await page.getByLabel('Password', { exact: false }).fill(data.password);
   await page.getByRole('button', { name: 'Create resident account', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText('If your invitation is valid');
+  await expect(page.getByRole('button', { name: 'Sign out' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
   const cookie = (await page.context().cookies()).find((c) => c.name === 'session');
   expect(cookie).toMatchObject({ httpOnly: true, secure: true, sameSite: 'Strict' });

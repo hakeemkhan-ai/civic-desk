@@ -31,6 +31,6 @@ services:
         value: ''
       - key: RETRIEVAL_MODE
         value: exact
-      # Keep anonymous limits shared until the live forwarding chain is verified.
+      # Verify the ingress chain before enabling source-based login throttling.
       - key: TRUST_PROXY_HOPS
         value: '0'

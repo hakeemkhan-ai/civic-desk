@@ -227,19 +227,28 @@ function Auth({ onLogin }: { onLogin: (u: UserView) => void }) {
     [email, setEmail] = useState(''),
     [password, setPassword] = useState(''),
     [name, setName] = useState(''),
+    [invitation, setInvitation] = useState(''),
+    [message, setMessage] = useState(''),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('');
   async function submit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError('');
+    setMessage('');
     try {
-      onLogin(
-        await api<UserView>(`/auth/${register ? 'register' : 'login'}`, {
-          method: 'POST',
-          body: body({ email, password, ...(register ? { name } : {}) }),
-        }),
-      );
+      if (register) {
+        const result = await api<{ message: string }>('/auth/register', {
+          method: 'POST', body: body({ email, password, name, invitation }),
+        });
+        setMessage(result.message);
+        setInvitation('');
+        setRegister(false);
+      } else {
+        onLogin(await api<UserView>('/auth/login', {
+          method: 'POST', body: body({ email, password }),
+        }));
+      }
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -278,11 +287,12 @@ function Auth({ onLogin }: { onLogin: (u: UserView) => void }) {
         <h2>{register ? 'Make yourself at home.' : 'Good to see you.'}</h2>
         <p>
           {register
-            ? 'Create a resident account to report and follow issues.'
+            ? 'Ask the maintainer for an invitation code to create your resident account.'
             : 'Sign in to help care for your neighborhood.'}
         </p>
         <form onSubmit={submit}>
           <ErrorBox message={error} />
+          {message && <p role="status">{message}</p>}
           {register && (
             <Field label="Your name">
               <input
@@ -292,6 +302,21 @@ function Auth({ onLogin }: { onLogin: (u: UserView) => void }) {
                 autoComplete="name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+              />
+            </Field>
+          )}
+          {register && (
+            <Field label="Invitation code" hint="Use the code sent privately by the maintainer.">
+              <input
+                required
+                autoComplete="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                minLength={64}
+                maxLength={64}
+                pattern="[a-f0-9]{64}"
+                value={invitation}
+                onChange={(e) => setInvitation(e.target.value.trim())}
               />
             </Field>
           )}
@@ -325,6 +350,7 @@ function Auth({ onLogin }: { onLogin: (u: UserView) => void }) {
           onClick={() => {
             setRegister(!register);
             setError('');
+            setMessage('');
           }}
         >
           {register ? 'Already have an account? Sign in' : 'New here? Create a resident account'}

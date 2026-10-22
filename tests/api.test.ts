@@ -10,6 +10,7 @@ import { AIError, type AIProvider } from '../server/ai/provider.js';
 import { AIService } from '../server/ai/service.js';
 import { indexOne } from '../server/retrieval/worker.js';
 import { config } from '../server/config.js';
+import { issueInvitation } from '../server/invitations.js';
 let mongo: MongoMemoryServer, client: MongoClient, db: Db, app: ReturnType<typeof httpServer>;
 let resident: ReturnType<typeof request.agent>,
   staff: ReturnType<typeof request.agent>,
@@ -42,12 +43,16 @@ beforeAll(async () => {
     [resident, 'resident@test.example'],
     [staff, 'staff@test.example'],
     [other, 'other@test.example'],
-  ] as const)
+  ] as const) {
+    const invitation = await issueInvitation(db, email);
     await agent
       .post('/api/auth/register')
       .set(headers)
-      .send({ email, password: 'testing-password-123', name: 'Test user' })
-      .expect(201);
+      .send({ email, password: 'testing-password-123', name: 'Test user', invitation })
+      .expect(202);
+    await agent.post('/api/auth/login').set(headers)
+      .send({ email, password: 'testing-password-123' }).expect(200);
+  }
   await collections(db).users.updateOne(
     { email: 'staff@test.example' },
     { $set: { role: 'staff' } },

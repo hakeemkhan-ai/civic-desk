@@ -7,6 +7,9 @@ export type User = {
   name: string;
   passwordHash: string;
   role: 'resident' | 'staff';
+  uploadBytes?: number;
+  uploadCount?: number;
+  feedbackCount?: number;
 };
 export type Feedback = {
   id: string;
@@ -73,6 +76,7 @@ export type DraftRecord = {
   promptVersion: string;
   schemaVersion: string;
   model: string;
+  expiresAt?: Date;
 };
 export function collections(db: Db) {
   return {
@@ -80,7 +84,9 @@ export function collections(db: Db) {
     complaints: db.collection<Complaint>('complaints'),
     drafts: db.collection<DraftRecord>('drafts'),
     sessions: db.collection<{ _id: string; userId: string; expiresAt: Date }>('sessions'),
-    uploads: db.collection<{ _id: string; ownerId: string; data: Buffer; createdAt: Date }>(
+    uploads: db.collection<{
+      _id: string; ownerId: string; data: Buffer; createdAt: Date; expiresAt?: Date;
+    }>(
       'uploads',
     ),
   };
@@ -90,6 +96,12 @@ export async function initialize(db: Db) {
   await Promise.all([
     c.users.createIndex({ email: 1 }, { unique: true }),
     c.sessions.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+    db.collection('rateLimits').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+    db.collection('invitations').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+    c.uploads.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+    c.drafts.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+    c.uploads.createIndex({ ownerId: 1 }),
+    db.collection('feedback').createIndex({ ownerId: 1 }),
     c.complaints.createIndex({ ownerId: 1, submissionKey: 1 }, { unique: true }),
     c.complaints.createIndex({ municipality: 1, status: 1, createdAt: -1 }),
     c.complaints.createIndex({ indexState: 1, indexLeaseUntil: 1 }),

@@ -4,6 +4,7 @@ import { MongoClient } from 'mongodb';
 import sharp from 'sharp';
 import { newComplaint } from '../../server/complaints.js';
 import type { Complaint, User } from '../../server/db.js';
+import { issueInvitation } from '../../server/invitations.js';
 
 export function verificationDatabase(uri = process.env.VERIFY_MONGO_URI) {
   if (!uri) throw new Error('Missing isolated verification MongoDB URI.');
@@ -33,6 +34,8 @@ export async function resetFixture() {
       'drafts',
       'feedback',
       'aiRuns',
+      'invitations',
+      'rateLimits',
     ]) {
       await db.collection(name).deleteMany({});
     }
@@ -92,7 +95,8 @@ export async function resetFixture() {
     );
     report.synthetic = true;
     await db.collection<Complaint>('complaints').insertOne(report);
-    return { password, users, report, image, photoId };
+    const invitation = await issueInvitation(db, 'registered@browser.example');
+    return { password, users, report, image, photoId, invitation };
   } finally {
     await client.close();
   }

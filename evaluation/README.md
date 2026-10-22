@@ -13,7 +13,7 @@ The first command makes no provider calls. It measures a fixed copy-template dra
 
 Results go to `results/offline.json` or `results/live.json`. Real embedding responses are cached under ignored `evaluation/cache/`, keyed by model, dimensions, input, and preprocessing version. Cache provenance is recorded and no synthetic vectors are generated. Remove only that disposable cache if you deliberately want to pay for fresh embeddings. A cached run cannot estimate fresh-request latency or total cold-run cost. Drafts are always requested live in the live mode. Copy the result file to a versioned artifact before rerunning if you need historical comparisons.
 
-The dataset, versions, and result shapes are deterministic; latency, generation timestamps, and live model output are not. Results include a dataset SHA-256, model configuration, prompt/schema/ranker versions, per-query rows, and failure examples. These are enough to identify which experiment ran, but provider nondeterminism remains. A full package lock still needs to be generated on a network-enabled host because this environment could not resolve all dependencies.
+The dataset, versions, and result shapes are deterministic; latency, generation timestamps, and live model output are not. Results include a dataset SHA-256, model configuration, prompt/schema/ranker versions, per-query rows, and failure examples. These are enough to identify which experiment ran, but provider nondeterminism remains. The committed `package-lock.json` records dependency artifacts and integrity hashes; use Node 24 and `npm ci` to match CI.
 
 ## Data and split
 

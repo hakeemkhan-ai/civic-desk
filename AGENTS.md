@@ -6,7 +6,7 @@
 - `client/`: interactive React interface, API helper, browser-only Leaflet map and styles; `public/` holds static assets.
 - `server/`: native Request/Response API logic, authentication, MongoDB persistence, uploads, AI adapters and a separate persistent retrieval worker.
 - `shared/domain.ts`: shared types, Zod schemas, categories and status transitions.
-- `scripts/`: database launcher, additive seeding, migration and reindexing commands.
+- `scripts/`: database launcher, additive seeding, invitation issuance, migration and reindexing commands.
 - `tests/`: automated tests; `evaluation/`: synthetic datasets and offline/live evaluation.
 - `README.md`: public setup, usage and architecture guide. Record verification evidence in `PROGRESS.md`; preserve the original `ROADMAP.md`. Keep local `docs/` untracked.
 
@@ -16,6 +16,7 @@ Use Node 24, matching CI. Run `npm ci`, copy `.env.example` to `.env` if absent,
 
 - `npm run dev:db`: start persistent local MongoDB; run only one database instance.
 - `npm run seed`: create missing demo accounts and samples without overwriting existing records.
+- `npm run invite -- address@example.test`: issue a private, single-use, email-bound resident invitation against the selected database; expires after 24 hours.
 - `npm run dev`: start Next.js on port 5173 and the separate embedding worker.
 - `npm run check`: type-check, run all tests and build production output.
 - `npm run build` / `npm start`: build into `.next/`, then run the production Next.js server on `PORT` (default 3001).
@@ -29,7 +30,7 @@ Use strict TypeScript, ES modules, two-space indentation and semicolons. Follow 
 
 ## Testing Guidelines
 
-Use Vitest and name tests `tests/*.test.ts`. Run `npm run test:unit` for isolated checks and `npm run test:integration` for Supertest over the native Web handler, MongoDB and socket tests. Integration tests and `test:next` require local ports and may download MongoDB. No numeric coverage threshold is configured; cover changed behavior, authorization and failure paths. Check resident/staff flows, map pinning, mobile layout, keyboard access and logout in a browser; builds and HTTP smoke tests do not establish UI correctness.
+Use Vitest and name tests `tests/*.test.ts`. Run `npm run test:unit` for isolated checks and `npm run test:integration` for native-handler/MongoDB security regressions, Supertest HTTP workflows and socket tests. Integration tests and `test:next` require local ports and may download MongoDB. No numeric coverage threshold is configured; cover changed behavior, authorization and failure paths. Check invited registration/separate sign-in, resident/staff flows, map pinning, mobile layout, keyboard access and logout in a browser; builds and HTTP smoke tests do not establish UI correctness.
 
 ## Commit & Pull Request Guidelines
 
@@ -38,6 +39,8 @@ Use concise imperative subjects, such as `Fix duplicate database startup`. PRs s
 ## Security & Configuration
 
 Never commit `.env`, database backups, caches or credentials. Use synthetic demo data. Keep AI keys server-side and preserve manual fallback. Publishing, paid provider calls and resource creation require explicit authorization.
+
+Invitation codes are credentials: deliver privately and never record them in shared logs. Keep rate limits in shared atomic storage, with independent session/account/invitation scopes. Trust forwarded client identities only behind verified ingress. Preserve existing records when adding optional quota/expiry fields. Atomically remove a photo's expiry before saving a report reference; never expire attached or legacy photos.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

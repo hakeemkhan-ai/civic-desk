@@ -22,6 +22,7 @@ import {
   createSession,
   hashToken,
   userView,
+  withPasswordCapacity,
 } from './auth.js';
 import {
   HttpError,
@@ -31,9 +32,11 @@ import {
   responseHeaders,
   type ApiContext,
   type Route,
-  RateLimiter,
   clientKey,
 } from './http.js';
+import { DatabaseLimiter, identityHash } from './limits.js';
+import type { Invitation } from './invitations.js';
+import { reserveUpload, reserveFeedback, MAX_COMPLAINT_FEEDBACK } from './storage.js';
 import {
   newComplaint,
   view,
@@ -82,29 +85,47 @@ export function createApi(db: Db, provider: AIProvider | null = makeProvider()) 
   function route(method: string, path: string, handle: Route['handle'], staff = false) {
     routes.push({ method, path, handle, staff });
   }
-  const generalLimit = new RateLimiter(
+  const limiter = (scope: string, windowMs: number, limit: number, message: string) =>
+    new DatabaseLimiter(db, scope, windowMs, limit, message);
+  const generalLimit = limiter('user',
     60000,
     150,
     'Too many requests. Please try again in a minute.',
   );
-  const authLimit = new RateLimiter(
+  const loginLimit = limiter('login-source',
     15 * 60000,
     25,
     'Too many sign-in attempts. Try again in 15 minutes.',
   );
-  const aiLimit = new RateLimiter(
+  const failedLoginLimit = limiter('login-failure', 15 * 60000, 25,
+    'Too many sign-in attempts. Try again in 15 minutes.');
+  const successfulLoginLimit = limiter('login-success', 15 * 60000, 25,
+    'Too many sign-ins. Try again in 15 minutes.');
+  const sessionLimit = limiter('session', 60000, 150,
+    'Too many requests. Please try again in a minute.');
+  const registrationLimit = limiter('invitation', 15 * 60000, 25,
+    'Too many registration attempts. Try again in 15 minutes.');
+  const aiLimit = limiter('ai',
     60000,
     10,
     'Please wait a minute before requesting more suggestions.',
   );
-  const uploadLimit = new RateLimiter(
+  const uploadLimit = limiter('upload',
     3600000,
     20,
     'Too many uploads. Please try again in an hour.',
   );
-  route('GET', '/api/health', async (_req) => {
-    await db.command({ ping: 1 });
-    return json({ ok: true });
+  // Coalesce health probes instead of letting public reads exhaust a shared quota.
+  let health: { until: number; pending: Promise<Response> } | undefined;
+  route('GET', '/api/health', async () => {
+    if (!health || health.until <= Date.now()) {
+      health = {
+        until: Date.now() + 5000,
+        pending: db.command({ ping: 1 }).then(() => json({ ok: true })),
+      };
+      health.pending.catch(() => { health = undefined; });
+    }
+    return (await health.pending).clone();
   });
   route('GET', '/api/config', (_req) =>
     json({
@@ -119,34 +140,63 @@ export function createApi(db: Db, provider: AIProvider | null = makeProvider()) 
   );
   route('POST', '/api/auth/register', async (req) => {
     const data = accountSchema
-      .extend({ name: z.string().trim().min(2).max(60) })
+      .extend({
+        name: z.string().trim().min(2).max(60),
+        invitation: z.string().regex(/^[a-f0-9]{64}$/),
+      })
       .strict()
       .parse(req.body);
-    const user = {
-      _id: randomUUID(),
-      email: data.email,
-      name: data.name,
-      passwordHash: await bcrypt.hash(data.password, 12),
-      role: 'resident' as const,
+    await registrationLimit.check(hashToken(data.invitation));
+    const invitations = db.collection<Invitation>('invitations');
+    const invitationFilter = {
+      _id: hashToken(data.invitation), email: data.email, expiresAt: { $gt: new Date() },
     };
-    await c.users.insertOne(user);
-    const cookie = await createSession(db, user._id);
-    return json(userView(user), 201, { 'Set-Cookie': cookie });
+    const invitation = await invitations.findOne(invitationFilter);
+    // Untrusted requests never reach account lookup or password hashing. The public
+    // result is identical for unknown, used, expired and valid invitations/emails.
+    if (invitation) {
+      const passwordHash = await withPasswordCapacity(() => bcrypt.hash(data.password, 12));
+      const claimed = await invitations.findOneAndDelete({
+        ...invitationFilter, expiresAt: { $gt: new Date() },
+      });
+      if (claimed) {
+        await c.users.updateOne({ email: data.email }, { $setOnInsert: {
+          _id: randomUUID(), email: data.email, name: data.name,
+          passwordHash, role: 'resident' as const,
+        } }, { upsert: true }).catch((error: unknown) => {
+          if ((error as { code?: number }).code !== 11000) throw error;
+        });
+      }
+    }
+    return json({ message: 'If your invitation is valid, your account is ready. Please sign in.' }, 202);
   });
   route('POST', '/api/auth/login', async (req) => {
-    const data = accountSchema.parse(req.body),
-      user = await c.users.findOne({ email: data.email });
-    const valid = await bcrypt.compare(
-      data.password,
-      user?.passwordHash ?? '$2b$12$1wDSBTXN0mBnZtkdn.oqBOWGmIJejZOKcLPU8xVHQYjHr1zR9naQK',
-    );
-    if (!user || !valid) throw new HttpError(401, 'Email or password is incorrect.');
+    const data = accountSchema.parse(req.body);
+    const source = clientKey(req.request);
+    // Only a verified network identity may impose a pre-password source quota.
+    if (source !== 'anonymous') await loginLimit.check(source);
+    const { user, valid } = await withPasswordCapacity(async () => {
+      const user = await c.users.findOne({ email: data.email });
+      const valid = await bcrypt.compare(
+        data.password,
+        user?.passwordHash ?? '$2b$12$1wDSBTXN0mBnZtkdn.oqBOWGmIJejZOKcLPU8xVHQYjHr1zR9naQK',
+      );
+      return { user, valid };
+    });
+    if (!user || !valid) {
+      // Without trusted ingress, a failed-account budget must not lock out the
+      // correct password. Never persist a fast hash of the submitted password.
+      await failedLoginLimit.check(identityHash(source, data.email));
+      throw new HttpError(401, 'Email or password is incorrect.');
+    }
+    await successfulLoginLimit.check(user._id);
     const cookie = await createSession(db, user._id);
     return json(userView(user), 200, { 'Set-Cookie': cookie });
   });
   route('POST', '/api/auth/logout', async (req) => {
     const token = sessionToken(req.request);
-    if (token) await c.sessions.deleteOne({ _id: hashToken(token) });
+    if (token && /^[a-f0-9]{64}$/.test(token))
+      await c.sessions.deleteOne({ _id: hashToken(token) });
     return new Response(null, { status: 204, headers: { 'Set-Cookie': clearSessionCookie() } });
   });
   route('GET', '/api/auth/me', (req) => json(userView(req.user!)));
@@ -162,6 +212,7 @@ export function createApi(db: Db, provider: AIProvider | null = makeProvider()) 
       promptVersion: PROMPT_VERSION,
       schemaVersion: SCHEMA_VERSION,
       model: config.DRAFT_MODEL,
+      expiresAt: new Date(Date.now() + 7 * 86400000),
     };
     await c.drafts.insertOne(draft);
     return json({ id: draft._id, suggestion }, 201);
@@ -189,7 +240,7 @@ export function createApi(db: Db, provider: AIProvider | null = makeProvider()) 
     );
   });
   route('POST', '/api/uploads', async (req) => {
-    uploadLimit.check(req.user!._id);
+    await uploadLimit.check(req.user!._id);
     const bytes = await readPhoto(req.request);
     let data: Buffer;
     try {
@@ -198,16 +249,21 @@ export function createApi(db: Db, provider: AIProvider | null = makeProvider()) 
       throw new HttpError(400, 'The photo could not be read. Choose a valid image under 5 MB.');
     }
     const photoId = randomUUID();
+    await reserveUpload(db, req.user!._id, data.byteLength);
     await c.uploads.insertOne({
       _id: photoId,
       ownerId: req.user!._id,
       data,
       createdAt: new Date(),
+      expiresAt: new Date(Date.now() + 86400000),
     });
     return json({ id: photoId }, 201);
   });
   route('GET', '/api/uploads/:id', async (req) => {
-    const photo = await c.uploads.findOne({ _id: id.parse(req.params.id) });
+    const photo = await c.uploads.findOne({
+      _id: id.parse(req.params.id),
+      $or: [{ expiresAt: { $exists: false } }, { expiresAt: { $gt: new Date() } }],
+    });
     if (!photo) throw new HttpError(404, 'Photo not found.');
     if (req.user!.role !== 'staff' && photo.ownerId !== req.user!._id)
       throw new HttpError(403, 'This photo is private.');
@@ -228,7 +284,10 @@ export function createApi(db: Db, provider: AIProvider | null = makeProvider()) 
     if (data.original.observedAt && Date.parse(data.original.observedAt) > Date.now() + 86400000)
       throw new HttpError(400, 'Observation time cannot be in the future.');
     const draft = data.draftId
-      ? await c.drafts.findOne({ _id: data.draftId, ownerId: req.user!._id })
+      ? await c.drafts.findOne({
+          _id: data.draftId, ownerId: req.user!._id,
+          $or: [{ expiresAt: { $exists: false } }, { expiresAt: { $gt: new Date() } }],
+        })
       : null;
     if (data.draftId && !draft) throw new HttpError(404, 'Draft not found.');
     if (draft && digest(draft.original) !== digest(data.original))
@@ -236,8 +295,15 @@ export function createApi(db: Db, provider: AIProvider | null = makeProvider()) 
         409,
         'The original notes changed. Generate a new draft or continue manually.',
       );
-    if (data.photoId && !(await c.uploads.findOne({ _id: data.photoId, ownerId: req.user!._id })))
-      throw new HttpError(403, 'Photo does not belong to this account.');
+    if (data.photoId) {
+      // Pin before inserting a reference: TTL deletion and this update are atomic
+      // on the upload document. Legacy attachments without expiry are preserved.
+      const photo = await c.uploads.findOneAndUpdate({
+        _id: data.photoId, ownerId: req.user!._id,
+        $or: [{ expiresAt: { $exists: false } }, { expiresAt: { $gt: new Date() } }],
+      }, { $unset: { expiresAt: '' } }, { returnDocument: 'after' });
+      if (!photo) throw new HttpError(403, 'Photo is unavailable or does not belong to this account.');
+    }
     const complaint = newComplaint(
       req.user!._id,
       key,
@@ -374,8 +440,16 @@ export function createApi(db: Db, provider: AIProvider | null = makeProvider()) 
         after: content.category,
       });
     const changed = contentHash(content) !== complaint.contentHash;
+    const appendedFeedback = complaint.feedback.length + feedback.length <= MAX_COMPLAINT_FEEDBACK
+      ? feedback : [];
     const updated = await c.complaints.findOneAndUpdate(
-      { _id: complaint._id, version: data.version },
+      {
+        _id: complaint._id,
+        version: data.version,
+        ...(appendedFeedback.length ? {
+          [`feedback.${MAX_COMPLAINT_FEEDBACK - appendedFeedback.length}`]: { $exists: false },
+        } : {}),
+      },
       {
         $set: {
           content,
@@ -407,7 +481,9 @@ export function createApi(db: Db, provider: AIProvider | null = makeProvider()) 
             decision: { category: content.category, department: data.department },
             previousContent: complaint.content,
           },
-          feedback: { $each: feedback },
+          feedback: {
+            $each: appendedFeedback,
+          },
         },
       },
       { returnDocument: 'after' },
@@ -511,8 +587,33 @@ export function createApi(db: Db, provider: AIProvider | null = makeProvider()) 
         location: complaint.location,
         observedAt: complaint.observedAt,
       };
-      await c.complaints.updateOne({ _id: complaint._id }, { $push: { feedback: entry } });
-    } else await db.collection('feedback').insertOne({ ...entry, ownerId: req.user!._id });
+      const updated = await c.complaints.updateOne({
+        _id: complaint._id,
+        [`feedback.${MAX_COMPLAINT_FEEDBACK - 1}`]: { $exists: false },
+        'feedback.candidateId': { $ne: entry.candidateId },
+      }, { $push: { feedback: entry } });
+      if (!updated.modifiedCount) {
+        const saved = await c.complaints.findOne({ _id: complaint._id });
+        if (!saved?.feedback.some((item) => item.candidateId === entry.candidateId))
+          throw new HttpError(429, 'This report has reached its feedback allowance.');
+      }
+    } else {
+      const feedback = db.collection<{ _id: string }>('feedback');
+      const key = identityHash(req.user!._id, entry.candidateId!, digest(entry.query ?? null));
+      if (!(await feedback.findOne({ _id: key }))) {
+        await reserveFeedback(db, req.user!._id);
+        let inserted = false;
+        try {
+          const saved = await feedback.updateOne({ _id: key }, {
+            $setOnInsert: { ...entry, ownerId: req.user!._id },
+          }, { upsert: true });
+          inserted = !!saved.upsertedCount;
+        } catch (error) {
+          if ((error as { code?: number }).code !== 11000) throw error;
+        }
+        if (!inserted) await c.users.updateOne({ _id: req.user!._id }, { $inc: { feedbackCount: -1 } });
+      }
+    }
     return json({ saved: true }, 201);
   });
   route('GET', '/api/staff/metrics', async (_req) => {
@@ -539,7 +640,6 @@ export function createApi(db: Db, provider: AIProvider | null = makeProvider()) 
     try {
       const url = new URL(request.url);
       const pathname = url.pathname.replace(/\/$/, '');
-      const key = clientKey(request);
       if (
         !['GET', 'HEAD', 'OPTIONS'].includes(request.method) &&
         (request.headers.get('X-Civic-Request') !== '1' ||
@@ -551,20 +651,13 @@ export function createApi(db: Db, provider: AIProvider | null = makeProvider()) 
           ['/api/health', '/api/config'].includes(pathname)) ||
         (request.method === 'POST' &&
           ['/api/auth/register', '/api/auth/login', '/api/auth/logout'].includes(pathname));
-      // Native requests expose no socket address. Verified users get their own
-      // bucket; unverified traffic uses only explicitly trusted proxy identity.
       let user;
       if (!publicRoute) {
-        // Stop repeated rejected credentials before another MongoDB lookup.
-        generalLimit.assertAllowed(key);
-        try {
-          user = await authenticate(db, request);
-        } catch (error) {
-          generalLimit.check(key);
-          throw error;
-        }
+        const token = sessionToken(request);
+        if (token && /^[a-f0-9]{64}$/.test(token)) await sessionLimit.check(hashToken(token));
+        user = await authenticate(db, request);
+        await generalLimit.check(user._id);
       }
-      generalLimit.check(user ? `user:${user._id}` : key);
       const parts = pathname.split('/');
       const matched = routes.find((candidate) => {
         if (candidate.method !== (request.method === 'HEAD' ? 'GET' : request.method)) return false;
@@ -577,8 +670,7 @@ export function createApi(db: Db, provider: AIProvider | null = makeProvider()) 
       if (!matched) throw new HttpError(404, 'API endpoint not found.');
       if (matched.staff && user?.role !== 'staff')
         throw new HttpError(403, 'Staff access is required.');
-      if (['/api/auth/register', '/api/auth/login'].includes(matched.path)) authLimit.check(key);
-      if (['/api/drafts', '/api/duplicates'].includes(matched.path)) aiLimit.check(user!._id);
+      if (['/api/drafts', '/api/duplicates'].includes(matched.path)) await aiLimit.check(user!._id);
       const params: Record<string, string> = {};
       matched.path.split('/').forEach((part, i) => {
         if (part.startsWith(':')) params[part.slice(1)] = decodeURIComponent(parts[i]);

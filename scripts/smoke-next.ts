@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { MongoClient } from 'mongodb';
 import sharp from 'sharp';
+import { issueInvitation } from '../server/invitations.js';
 
 // Run after `npm run build`. Every write is confined to a fresh, disposable
 // MongoDB; the project's .env, persistent database and existing accounts are untouched.
@@ -143,14 +144,20 @@ try {
   assert.equal((await call('/complaints')).status, 401);
   assert.equal((await fetch(`${base}/api/auth/register`, jsonBody({}))).status, 403);
   const password = `smoke-${randomUUID()}`;
-  const resident = await call('/auth/register', jsonBody({ email: 'resident@smoke.example', name: 'Synthetic resident', password }));
-  assert.equal(resident.status, 201);
+  const residentInvitation = await issueInvitation(db, 'resident@smoke.example');
+  const registration = await call('/auth/register', jsonBody({ email: 'resident@smoke.example', name: 'Synthetic resident', password, invitation: residentInvitation }));
+  assert.equal(registration.status, 202);
+  assert.equal(registration.headers.getSetCookie().length, 0);
+  const resident = await call('/auth/login', jsonBody({ email: 'resident@smoke.example', password }));
+  assert.equal(resident.status, 200);
   const cookieHeader = resident.headers.getSetCookie()[0];
   assert(cookieHeader?.includes('HttpOnly') && cookieHeader.includes('SameSite=Strict') && cookieHeader.includes('Secure'));
   const residentCookie = cookieHeader.split(';')[0];
   const residentId = (await resident.json()).id as string;
-  const staff = await call('/auth/register', jsonBody({ email: 'staff@smoke.example', name: 'Synthetic staff', password }));
-  assert.equal(staff.status, 201);
+  const staffInvitation = await issueInvitation(db, 'staff@smoke.example');
+  assert.equal((await call('/auth/register', jsonBody({ email: 'staff@smoke.example', name: 'Synthetic staff', password, invitation: staffInvitation }))).status, 202);
+  const staff = await call('/auth/login', jsonBody({ email: 'staff@smoke.example', password }));
+  assert.equal(staff.status, 200);
   const staffCookie = staff.headers.getSetCookie()[0].split(';')[0];
   await db.collection('users').updateOne({ email: 'staff@smoke.example' }, { $set: { role: 'staff' } });
   assert.equal((await call('/auth/me', {}, residentCookie)).status, 200);

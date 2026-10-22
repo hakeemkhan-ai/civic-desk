@@ -4,6 +4,18 @@ import { collections, type User } from './db.js';
 import { config } from './config.js';
 import { HttpError } from './http.js';
 
+let passwordOperations = 0;
+export async function withPasswordCapacity<T>(operation: () => Promise<T>): Promise<T> {
+  if (passwordOperations >= 4)
+    throw new HttpError(503, 'Sign-in is busy. Please try again shortly.', { 'Retry-After': '1' });
+  passwordOperations += 1;
+  try {
+    return await operation();
+  } finally {
+    passwordOperations -= 1;
+  }
+}
+
 export const hashToken = (value: string) => createHash('sha256').update(value).digest('hex');
 
 export function sessionToken(request: Request): string | undefined {
@@ -23,7 +35,8 @@ export function sessionToken(request: Request): string | undefined {
 
 export async function authenticate(db: Db, request: Request): Promise<User> {
   const raw = sessionToken(request);
-  if (raw === undefined) throw new HttpError(401, 'Please sign in to continue.');
+  if (!raw || !/^[a-f0-9]{64}$/.test(raw))
+    throw new HttpError(401, 'Please sign in to continue.');
   const session = await collections(db).sessions.findOne({
     _id: hashToken(raw),
     expiresAt: { $gt: new Date() },

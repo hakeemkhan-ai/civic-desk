@@ -24,7 +24,8 @@ its HTTP health check disabled. The AI-disabled worker must leave pending jobs
 unchanged. Active-operation draining is separately covered by the worker unit
 test; these checks do not prove live AI processing.
 
-The Chromium suite covers registration, resident/staff workflows, private
+The Chromium suite issues an email-bound invitation directly in its disposable
+fixture, registers without a session, then signs in separately. It covers resident/staff workflows, private
 attachments, retries/idempotency, duplicate comparison, errors, map mouse and
 keyboard actions, session/logout/permissions/CSP, serious/critical axe findings,
 and 1280×900, 390×844 and 320×844 layouts. Tiles are deterministic fixtures in
@@ -49,6 +50,9 @@ tests closes the disposable browser context.
 - At desktop and phone widths, inspect spacing, wrapping, image sizing, map
   controls, navigation and the staff panel. Check loading, empty and error states
   and every wizard step; automated screenshots alone do not establish visual quality.
+- Check the invitation field and generic signup acknowledgement with keyboard
+  navigation. Use only a disposable invitation: confirm signup does not sign in
+  automatically and never capture or share a usable code in evidence.
 - Use the browser's menu to set **actual browser zoom to 200%**, confirm the menu
   reads 200%, then inspect forms, details, staff decisions and navigation. Keep
   all controls readable/reachable without lost content. Reset to 100%. Changing

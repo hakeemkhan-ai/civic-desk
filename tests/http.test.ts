@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createApi } from '../server/app.js';
-import { readJson, readPhoto, RateLimiter, clientKey } from '../server/http.js';
+import { readJson, readPhoto, clientKey } from '../server/http.js';
 import { sessionToken } from '../server/auth.js';
 import type { Db } from 'mongodb';
 import { config } from '../server/config.js';
@@ -32,15 +32,6 @@ describe('native Web request boundaries', () => {
     form.append('photo', new File(['image'], 'b.png', { type: 'image/png' }));
     const request = new Request('http://localhost/api/uploads', { method: 'POST', body: form });
     await expect(readPhoto(request)).rejects.toMatchObject({ status: 400 });
-  });
-
-  it('provides Retry-After and maintains independent rate-limit buckets', () => {
-    const limiter = new RateLimiter(60000, 1, 'Slow down');
-    limiter.check('one');
-    expect(() => limiter.check('one')).toThrowError(expect.objectContaining({
-      status: 429, headers: { 'Retry-After': expect.any(String) },
-    }));
-    expect(() => limiter.check('two')).not.toThrow();
   });
 
   it('ignores untrusted forwarding and groups trusted IPv6 addresses in one subnet', () => {
@@ -76,19 +67,4 @@ describe('native Web request boundaries', () => {
     expect(await head.text()).toBe('');
   });
 
-  it('stops repeated invalid sessions before additional database authentication lookups', async () => {
-    let lookups = 0;
-    const db = {
-      collection: () => ({ findOne: async () => { lookups += 1; return null; } }),
-    } as unknown as Db;
-    const { handle } = createApi(db, null);
-    const request = () => new Request('http://localhost/api/complaints', {
-      headers: { cookie: 'session=expired' },
-    });
-    for (let i = 0; i < 150; i++) expect((await handle(request())).status).toBe(401);
-    const rejected = await handle(request());
-    expect(rejected.status).toBe(429);
-    expect(Number(rejected.headers.get('retry-after'))).toBeGreaterThan(0);
-    expect(lookups).toBe(150);
-  });
 });

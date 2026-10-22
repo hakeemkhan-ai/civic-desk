@@ -10,23 +10,13 @@ This README covers local setup, the resident/staff workflow, architecture, testi
 
 ## Release and verification status
 
-The public demonstration is live at **[civic-desk-demo.onrender.com](https://civic-desk-demo.onrender.com)**, using Render Free and MongoDB Atlas Free in Singapore. AI is disabled; manual reporting and keyword duplicate comparison are available. This is an independent demonstration using synthetic data.
+The public demonstration is **[civic-desk-demo.onrender.com](https://civic-desk-demo.onrender.com)**. The latest recorded hosted verification (2026-10-21) used Render Free and MongoDB Atlas Free in Singapore, with AI disabled. Resident/staff read-only browser checks, mobile navigation, health and manual fallback passed. This source checkout also contains security fixes that have not been deployed in the current work; do not assume the hosted service matches it.
 
-Hosted HTTP verification (2026-10-20) passed Atlas-backed health, pages/deep links/assets, production CSP nonces, resident registration and resident/staff login, Secure cookies, manual reporting, idempotency, staff permissions/status history, following, private photo normalization/access and logout. A second deployment confirmed that accounts, reports, staff history, following and the private photo persist. The database contains nine seeded examples and one labeled synthetic deployment-verification report. Hosted browser interaction checks remain unverified because no browser is connected.
+Local security-fix verification (2026-10-22, Node 24.20.0): generated route types, TypeScript, **all 72 Vitest tests**, and the production Next.js 16.4.2 build pass. The actual production HTTP smoke passes invitation signup/separate login, pages/assets/CSP, resident/staff workflows, private photos, logout, environment port selection and graceful shutdown using disposable MongoDB. The full dependency audit reports zero known vulnerabilities.
 
-Latest recheck (2026-10-20, Node 24.20.0): Next.js 16.4.2 type generation, TypeScript checking and the production Webpack build pass. **All 60 tests pass** (41 unit tests and 19 real MongoDB/socket integration tests). The built Next.js HTTP smoke passes page/deep-link/asset/CSP-nonce checks, resident/staff API workflows, `.env` port handling and graceful child shutdown against disposable MongoDB. `npm audit` reports zero known vulnerabilities. Offline evaluation passes without provider calls.
+All eight isolated production Chromium scenarios pass, including invitation signup, resident/staff decisions, photo failures and privacy, idempotency, map mouse/keyboard controls, session errors, logout, axe checks, and desktop/390px/320px layouts. Earlier implementation commit `7cf945c` passed Docker lifecycle/browser verification in CI; the new security changes have not had a fresh container/hosted run. Evidence and dates are recorded in [`PROGRESS.md`](PROGRESS.md).
 
-Controlled Chromium browser scenarios also passed desktop resident login, manual reporting, duplicate comparison, keyboard map panning, pin selection/clearing, submission and following; 390px mobile navigation; and staff review, consecutive status updates, logout and protected-page reload. No unhandled page errors were captured. Evidence and limits are recorded in [`PROGRESS.md`](PROGRESS.md).
-
-Historical Express/Vite baseline checks, before this migration:
-
-- Full TypeScript check and server/client production build.
-- 45 tests: 29 unit/provider-contract tests and 16 real MongoDB HTTP integration tests covering authorization, idempotency, status transitions, private uploads, feedback, duplicate links, and stale indexing protection.
-- Persistent local MongoDB 7.0.24; repeat seeding preserves all user and complaint documents exactly.
-- Running Vite/API HTTP flow: login, AI-unavailable/manual submission, following, staff status update, and resident permission denial. Full report/timeline, following and session survive API/database restart; logout revokes the session. These are HTTP checks, not browser UI evidence.
-- Offline evaluation on 240 synthetic queries in 30 incident groups. Actual results: [`evaluation/results/offline.json`](evaluation/results/offline.json).
-
-Still unverified: comprehensive keyboard/200% zoom and browser photo/error-path coverage, Docker image execution, live OpenAI calls, and Atlas Vector Search. Hosted MongoDB persistence uses Atlas with keyword retrieval; it does not establish Atlas Vector Search behavior. The migration preserves existing MongoDB formats and does not change the persistent local database.
+The committed offline benchmark contains 240 synthetic queries in 30 incident groups: [`evaluation/results/offline.json`](evaluation/results/offline.json). Live OpenAI quality/cost, Atlas Vector Search, human evaluation, actual 200% browser zoom and the full headed visual/keyboard assessment remain unverified. Automated browser checks do not replace these. Hosted Atlas persistence does not establish Atlas Vector Search behavior.
 
 ## Local setup
 
@@ -72,7 +62,7 @@ Demo accounts:
 - `staff@brookfield.example` — Sam Rivera, staff.
 - Password: the `DEMO_PASSWORD` you set. The UI never exposes or auto-fills it.
 
-The seed adds nine labeled synthetic reports and creates missing demo accounts. Repeating it does not overwrite edits, reset passwords, promote existing accounts, or duplicate reports. Staff creation is available only through this non-production CLI with `DEMO_ACCOUNTS=true`; public registration always creates residents and rejects extra fields, including `role`.
+The seed adds nine labeled synthetic reports and creates missing demo accounts. Repeating it does not overwrite edits, reset passwords, promote existing accounts, or duplicate reports. Staff creation is available only through this non-production CLI with `DEMO_ACCOUNTS=true`; invited registration creates residents and rejects extra fields, including `role`. See [invitation instructions](#reliability-privacy-and-limits) to enroll another resident.
 
 ## Try the application
 
@@ -90,6 +80,7 @@ Stop the development server and user-space database with Ctrl+C in their respect
 - **Port 27017 already in use:** keep your existing MongoDB running and skip `dev:db`, or stop the conflicting service. Never delete database files to resolve a port conflict.
 - **Database connection refused:** start MongoDB before seeding or starting Next.js; check `MONGODB_URI`.
 - **Login fails after changing the demo password:** seeding preserves existing account passwords; `.env` changes only affect newly seeded accounts.
+- **New account cannot sign in:** signup acknowledges every valid-shaped request without revealing membership. Check that the private invitation was issued for the same email, is unused and has not expired. Ask the maintainer for a new code if necessary.
 - **API rejects a write:** use the browser origin configured in `APP_ORIGIN` (default `http://localhost:5173`).
 - **AI or map tiles unavailable:** manual drafting and coordinate entry remain available. Tiles require internet access; AI requires a server-side key and incurs provider charges.
 
@@ -178,16 +169,16 @@ included in the Blueprint.
    `MONGODB_URI`/`DEMO_PASSWORD` values do not override the file. Seeding is additive
    and preserves existing passwords. Remove the temporary local IP allowlist entry
    and the private file when finished. Keep the staff password private; public
-   visitors can register their own resident accounts.
+   visitors need a private, email-bound invitation from the maintainer to register.
 5. Verify the assigned HTTPS URL in a browser: `/api/health` returns
-   `{"ok":true}`, `/api/config` has `draftingAvailable: false`, resident registration
+   `{"ok":true}`, `/api/config` has `draftingAvailable: false`, invited resident registration
    and login work, a manual report persists, a photo is accessible only to its
    owner or staff, staff can review/update it, and logout blocks protected views.
    Redeploy and confirm the report and photo survive. Test mobile map pinning and
    keyboard access on the hosted site before sharing the link.
 
-The initial `TRUST_PROXY_HOPS=0` conservatively shares anonymous request/sign-in
-limits across visitors. Verify Render's live forwarded-address chain, including a
+The initial `TRUST_PROXY_HOPS=0` leaves forwarding headers untrusted; invitation,
+session and account quotas remain independent. Verify Render's live forwarded-address chain, including a
 request with a supplied `X-Forwarded-For`, before trusting a proxy hop. Do not
 increase it just to bypass a 429. A custom domain also requires updating
 `APP_ORIGIN` to that exact HTTPS origin and using it consistently for login/writes.
@@ -236,7 +227,8 @@ This requeues incompatible/failed records; keep the worker running to process th
 - `shared/domain.ts`: category/status contract, input and draft schemas, versioned demo directory.
 - `app/`: Next.js layouts, pages and Node-runtime API route handlers. Navigation uses Next.js routing; the interactive Leaflet map loads only in the browser.
 - `server/app.ts`, `auth.ts`, `complaints.ts`, `db.ts`: native Request/Response REST validation, database-backed sessions, permissions, atomic complaint writes and audit events, private/public projections.
-- `server/runtime.ts`: cached web-process MongoDB connection and API services. `server/index.ts`: independent persistent worker entrypoint.
+- `server/runtime.ts`: shared web-process MongoDB connection with fresh API handlers. `server/index.ts`: independent persistent worker entrypoint.
+- `server/limits.ts`, `invitations.ts`, `storage.ts`: shared atomic quotas, email-bound invitation records and bounded photo/feedback storage. `scripts/invite.ts` issues private enrollment codes.
 - `server/ai/`: versioned prompt, official SDK adapter, refusal/error handling, budget reservations, operation telemetry.
 - `server/retrieval/`: keyword and cosine functions, interpretable incident rules, exact/Atlas candidate retrieval, leased indexing worker.
 - `evaluation/`: deterministic synthetic fixture generation, development-only threshold selection, held-out scoring, actual provider evaluation and cache.
@@ -306,11 +298,29 @@ The committed offline result is intentionally unflattering: the lexical baseline
 
 ## Reliability, privacy, and limits
 
-All protected endpoints require a current MongoDB-backed session; sensitive writes additionally require server-side staff authorization. State-changing requests require `X-Civic-Request: 1` and reject a supplied foreign Origin. No CORS credentials are allowed. Strict Zod inputs reject unknown fields. Rate limits cover authentication, general API traffic, AI requests, and uploads. SDK requests have a configurable per-attempt timeout and one retry. Complaint creation uses a unique `(ownerId, submissionKey)` index and body fingerprint; conflicting key reuse is rejected. Embedding jobs use content hashes, leases, and atomic compare-and-set writes.
+New resident accounts require a maintainer-issued invitation. Select the intended
+database through your private environment file, then run:
 
-Public complaint projections contain no emails, passwords, account IDs, raw notes, AI draft history, or private photo URLs. Basic email/phone redaction is a defense in depth, **not complete PII detection**. Public report text, staff notes, and location still need human care. Do not use real sensitive data in this demo. AI telemetry stores model, versions, timing, usage, outcome, and estimated cost without report bodies; it expires after 90 days. Original reports and attachments have no automatic retention policy in this release; plan deletion/retention procedures before real use. Unattached uploads may remain after abandoned submissions.
+```sh
+npm run invite -- resident@example.test
+# For another environment: DOTENV_CONFIG_PATH=.env.render npm run invite -- resident@example.test
+```
 
-This is a single-instance portfolio architecture. In-memory rate limits must move to a shared store before scaling replicas. Native request handlers have no socket peer address: anonymous traffic shares a conservative bucket unless `TRUST_PROXY_HOPS` is configured behind an ingress that overwrites the trusted `X-Forwarded-For` chain. Never enable proxy trust on a directly accessible server; spoofed forwarding headers must not become client identities. Authenticated traffic is counted per verified account. It has no password reset/email verification, notifications, resident post-submission editing, moderation workflow, automatic complaint archival, or real municipal integration. Timelines embedded in documents suit this bounded demonstration; long-lived high-volume histories need separate events and transactions. Evaluation data is synthetic and human review remains pending. Voice, image understanding, grounded guidance, autonomous staff agents, and fine-tuning are follow-up work.
+Deliver the printed code privately to the intended address owner. It expires after
+24 hours and is bound to that normalized email address. Treat it as a credential;
+do not put it in URLs, screenshots, shared logs or source control. Registration
+always returns the same acknowledgement without a session, then asks the resident
+to sign in. Invalid, expired or used codes disclose no account membership. Existing
+accounts keep their passwords and roles; issuing an invitation cannot reset them.
+If account creation fails after consuming a code, the maintainer can issue another.
+
+All protected endpoints require a current MongoDB-backed session; sensitive writes additionally require server-side staff authorization. State-changing requests require `X-Civic-Request: 1` and reject a supplied foreign Origin. No CORS credentials are allowed. Strict Zod inputs reject unknown fields. Atomic MongoDB counters share session, account, invitation, AI and upload limits across processes and restarts, with TTL cleanup. Anonymous config reads cannot exhaust signed-in quotas. Health probes coalesce database checks for five seconds; logout independently revokes the session. SDK requests have a configurable per-attempt timeout and one retry. Complaint creation uses a unique `(ownerId, submissionKey)` index and body fingerprint; conflicting key reuse is rejected. Embedding jobs use content hashes, leases, and atomic compare-and-set writes.
+
+Public complaint projections contain no emails, passwords, account IDs, raw notes, AI draft history, or private photo URLs. Basic email/phone redaction is a defense in depth, **not complete PII detection**. Public report text, staff notes, and location still need human care. Do not use real sensitive data in this demo. AI telemetry expires after 90 days. New drafts expire after seven days and new unattached photos after 24 hours; expired photos cannot be read or attached while awaiting MongoDB's asynchronous TTL deletion. Submitting a photo removes its expiry before saving the report, preserving report attachments. A failed submission after this step may retain its photo; the account quota still bounds storage. Existing records receive no expiry or deletion migration.
+
+Each account has a lifetime allowance of 100 normalized photos and 100 MiB of photo bytes, initialized from any legacy uploads. Reservations are atomic and conservative: expired photos and failed writes do not automatically refund the allowance. A maintainer must review storage before adjusting counters in `users`. Standalone duplicate feedback is deduplicated per account/candidate/query with a 500-entry account allowance; complaint feedback is capped at 100 entries and repeated candidate rejections are idempotent. Existing feedback is preserved, including legacy arrays above the cap. Staff review history continues in the timeline when the feedback cap is reached. Retention of original reports, attached photos and audit history still needs a policy before real use.
+
+Native request handlers have no socket peer address. Configure `TRUST_PROXY_HOPS` only behind a verified ingress that normalizes the trusted `X-Forwarded-For` chain and prevents direct bypass. This enables a separate pre-password source limit. With the default `0`, failed login responses are limited per account after password verification so an attacker cannot lock out the correct password. Four concurrent password operations per process bound authentication work; successful logins have their own account quota. Trusted ingress request-volume protection remains necessary against password spraying, rotating invalid tokens and volumetric attacks. Never enable proxy trust on a directly accessible server. The project has no password reset, email delivery, notifications, resident post-submission editing, moderation workflow, automatic complaint archival, or real municipal integration. Timelines embedded in documents suit this bounded demonstration; long-lived high-volume histories need separate events and transactions. Evaluation data is synthetic and human review remains pending. Voice, image understanding, grounded guidance, autonomous staff agents, and fine-tuning are follow-up work.
 
 ## Further reading
 
