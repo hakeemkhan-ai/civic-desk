@@ -360,7 +360,7 @@ describe('private resources, feedback, and duplicate links', () => {
     const feedback = await db.collection('feedback').findOne({ candidateId: complaintId });
     expect(feedback?.query.content.title).toBe(content.title);
     expect(feedback?.candidateSnapshot.contentHash).toBeTruthy();
-    expect(feedback?.rankVersion).toBe('incident-rules-v2');
+    expect(feedback?.rankVersion).toBe('incident-rules-v3');
   });
   it('records a duplicate link without merging and rejects the reverse link', async () => {
     const created = await resident
