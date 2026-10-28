@@ -192,6 +192,9 @@ try {
   await assertPersisted();
   phase('MongoDB restart');
   await compose(['restart', 'mongo']);
+  // Web health is cached; wait for MongoDB's own readiness probe before persistence checks.
+  phase('MongoDB readiness after restart');
+  await compose(['up', '-d', '--wait', '--wait-timeout', '120', 'mongo'], 180_000);
   await until(healthy, 'database restart');
   phase('session and data persistence after MongoDB restart');
   await assertPersisted();
