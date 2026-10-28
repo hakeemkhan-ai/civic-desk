@@ -244,3 +244,24 @@ Single-instance rate limiting; MongoDB binary photo storage; embedded timelines;
 - Node 24.20.0 final checks passed: generated route types and TypeScript, all 72 Vitest tests in ten files, production build, actual production Next HTTP smoke, and all eight isolated production Chromium scenarios with zero retries. Full `npm audit --json`, including development dependencies, reports zero known vulnerabilities. Limited source credential-pattern scan found no matches; `git diff --check` passed. Logs are ignored under `.cache/security-review/`, with synthetic browser artifacts under `.cache/browser-verification/`.
 - Reviewed all six tracked Markdown documents, seven ignored local Markdown guides and both local JSON documentation artifacts. Updated stale Express/Vite, open-registration, process-local limiting, dependency-lock and browser/Docker status statements; aligned API/setup/maintainer/testing/retention instructions with source. Checked 46 local Markdown file-link targets with no missing files. Historical ledger entries remain dated and clearly labeled; original `ROADMAP.md` is preserved. Local `docs/` remains ignored.
 - No paid provider calls, persistent local/hosted database writes, hosting changes, push or deployment were part of this work. New container/hosted verification for this security-fix artifact remains pending; previous successful container/hosted evidence applies only to its recorded commit/date. Actual 200% zoom, full headed assessment, human evaluation and live AI/Atlas Vector Search limits remain as documented.
+
+
+## Unicode keyword matching verification — 2026-10-28
+
+- Fixed ASCII-only keyword matching for Telugu/Hindi and Unicode-equivalent text using NFKC normalization and Unicode word characters. English stop-word behavior is preserved; standalone combining marks are ignored. Ranking version is now `incident-rules-v3`.
+- Added eight regression cases to `tests/domain.test.ts`.
+- Actual E2B verification from task `ac7459bbef7b4c1e9b6fbb27560ab9d5`:
+  - `npm ci --ignore-scripts --no-audit --no-fund`: exit 0; existing locked dependencies installed.
+  - Before the fix, `npm test -- tests/domain.test.ts -t 'Unicode keyword matching'`: exit 1; 4 failed, 4 passed, 17 unrelated tests skipped.
+  - After the fix, the same focused command: exit 0; 8 passed, 17 unrelated tests skipped.
+  - `npm run test:unit`: exit 0; 47 passed across 6 test files.
+- Historical benchmark results were not regenerated. Build, typecheck, database/integration, and live-provider checks were not run for this change. No GitHub publishing was performed.
+
+
+### Unicode fix: additional E2B verification — 2026-10-28
+
+- Task `02b8488e650f44c2b137c403442d98f0` ran Node 24.20.0 and installed the existing locked dependencies with lifecycle scripts disabled; installation exited 0.
+- `npm run typecheck`: exit 0; Next.js route types and TypeScript validation passed.
+- `npm run build`: exit 137. Webpack compilation completed, then the process was killed during Next.js's TypeScript phase. Resource pressure is suspected, but the cause is not confirmed. This is not a passing production build.
+- `git diff --check`: exit 0. Source/test/configuration hashes matched the previously reviewed checkpoint before and after these checks. The earlier eight passing regression cases and 47 passing unit tests apply to this unchanged source.
+- Generated, ignored build output was cleaned to keep recovery snapshots bounded. Database/integration, browser, benchmark and live-provider checks were not run in this E2B verification. GitHub CI still needs to complete the production build and broader checks before merging.

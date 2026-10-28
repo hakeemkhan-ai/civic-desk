@@ -76,6 +76,20 @@ describe('status and content invariants', () => {
     expect(ReportSchema.safeParse({ ...original, role: 'staff' }).success).toBe(false);
   });
 });
+describe('Unicode keyword matching', () => {
+  it.each([
+    { name: 'Telugu', a: 'రోడ్డు గుంత', b: 'రోడ్డు గుంత', expected: 1 },
+    { name: 'Hindi', a: 'सड़क गड्ढा', b: 'सड़क गड्ढा', expected: 1 },
+    { name: 'different Unicode words', a: 'రోడ్డు', b: 'నీరు', expected: 0 },
+    { name: 'canonical accents', a: 'café', b: 'cafe\u0301', expected: 1 },
+    { name: 'full-width Latin', a: 'ＲＯＡＤ', b: 'road', expected: 1 },
+    { name: 'English case and stop words', a: 'The broken LIGHT near the road', b: 'broken light road', expected: 1 },
+    { name: 'punctuation', a: '---', b: '!!!', expected: 0 },
+    { name: 'standalone marks', a: '\u0301', b: '\u0301', expected: 0 },
+  ])('handles $name', ({ a, b, expected }) => {
+    expect(keyword(a, b)).toBe(expected);
+  });
+});
 describe('duplicate incident identity', () => {
   it('computes real cosine and separate lexical overlap', () => {
     expect(cosine([1, 0], [0, 1])).toBe(0);

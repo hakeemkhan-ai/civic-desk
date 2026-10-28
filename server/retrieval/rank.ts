@@ -1,5 +1,5 @@
 import type { Category, Location, Status } from '../../shared/domain.js';
-export const RANK_VERSION = 'incident-rules-v2';
+export const RANK_VERSION = 'incident-rules-v3';
 export type Incident = {
   text: string;
   location: Location;
@@ -47,8 +47,9 @@ const stop = new Set([
 export function tokens(s: string) {
   return new Set(
     s
+      .normalize('NFKC')
       .toLowerCase()
-      .match(/[a-z0-9]+/g)
+      .match(/[\p{L}\p{N}][\p{L}\p{N}\p{M}]*/gu)
       ?.filter((t) => !stop.has(t)) ?? [],
   );
 }

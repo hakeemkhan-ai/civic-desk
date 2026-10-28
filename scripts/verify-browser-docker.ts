@@ -27,6 +27,10 @@ const evidence: Record<string, unknown> = {
   startedAt: new Date().toISOString(),
   checks: [],
 };
+const phase = (name: string) => {
+  evidence.phase = name;
+  console.log(`CHECK ${name}`);
+};
 const passed = (name: string) => {
   (evidence.checks as string[]).push(name);
   console.log(`PASS ${name}`);
@@ -109,8 +113,10 @@ try {
   await writeEnvironment(3001);
   await compose(['config', '--quiet']);
   created = true;
+  phase('build production image');
   await compose(['build', 'web'], 600_000, false);
   evidence.imageId = await docker(['image', 'inspect', '--format', '{{.Id}}', image]);
+  phase('initial container startup');
   await compose(
     ['up', '-d', '--wait', '--wait-timeout', '120', 'mongo', 'web', 'tls'],
     180_000,
@@ -150,6 +156,7 @@ try {
   passed(
     'actual runtime image: Node 24, non-root, production dependencies/assets, no source mounts or local secrets, default port',
   );
+  phase('initial fixture login and persistence snapshot');
   const data = await resetFixture();
   const headers = { 'X-Civic-Request': '1', Origin: origin };
   assert.equal(
@@ -171,20 +178,30 @@ try {
   const before = await (await api.get(`/api/complaints/${data.report._id}`)).json();
   const photoBefore = await (await api.get(`/api/uploads/${data.photoId}`)).body();
   const assertPersisted = async () => {
-    assert.equal((await api!.get('/api/auth/me')).status(), 200, 'Account/session must persist');
+    const sessionStatus = (await api!.get('/api/auth/me')).status();
+    evidence.lastSessionStatus = sessionStatus;
+    assert.equal(sessionStatus, 200, 'Account/session must persist');
     assert.deepEqual(await (await api!.get(`/api/complaints/${data.report._id}`)).json(), before);
     assert.deepEqual(await (await api!.get(`/api/uploads/${data.photoId}`)).body(), photoBefore);
   };
+  phase('web recreation');
   await compose(['up', '-d', '--no-deps', '--force-recreate', '--wait', 'web'], 120_000);
   // Caddy re-resolves web's DNS when its upstream connection is recreated.
   await until(healthy, 'web recreation');
+  phase('session and data persistence after web recreation');
   await assertPersisted();
+  phase('MongoDB restart');
   await compose(['restart', 'mongo']);
+  // Web health is cached; wait for MongoDB's own readiness probe before persistence checks.
+  phase('MongoDB readiness after restart');
+  await compose(['up', '-d', '--wait', '--wait-timeout', '120', 'mongo'], 180_000);
   await until(healthy, 'database restart');
+  phase('session and data persistence after MongoDB restart');
   await assertPersisted();
   passed(
     'report, photo bytes, account/session, following and history persist across web recreation and Mongo restart',
   );
+  phase('database outage and recovery');
   await compose(['stop', 'mongo']);
   await until(
     async () => (await inspectState('web')).Health.Status === 'unhealthy',
@@ -192,6 +209,7 @@ try {
     90_000,
   );
   assert.equal(await healthy(), false);
+  phase('database outage recovery');
   await compose(['start', 'mongo']);
   await until(
     async () => (await inspectState('web')).Health.Status === 'healthy',
@@ -200,6 +218,7 @@ try {
   );
   await assertPersisted();
   passed('database outage marks web unhealthy and recovers without a web restart');
+  phase('web graceful shutdown');
   await compose(['stop', '-t', '15', 'web']);
   const stopped = await inspectState('web');
   assert.equal(stopped.Running, false);
@@ -208,6 +227,7 @@ try {
   assert([0, 143].includes(stopped.ExitCode), 'Web must handle SIGTERM without SIGKILL');
   assert.equal(await healthy(), false, 'No orphan HTTP server may remain after shutdown');
   passed('web SIGTERM exits without SIGKILL, OOM or orphan HTTP listener');
+  phase('overridden web port');
   await writeEnvironment(4011);
   await compose(['up', '-d', '--no-deps', '--force-recreate', '--wait', 'web', 'tls'], 120_000);
   await until(healthy, 'overridden port');
@@ -217,6 +237,7 @@ try {
   const db = mongoClient.db();
   const pendingBefore = await db.collection('complaints').find({}).toArray();
   const aiRunsBefore = await db.collection('aiRuns').countDocuments();
+  phase('AI-disabled worker lifecycle');
   await compose(['--profile', 'worker', 'up', '-d', '--no-deps', 'worker']);
   await until(
     async () =>
@@ -243,6 +264,7 @@ try {
   );
   await mongoClient.close();
   mongoClient = undefined;
+  phase('Chromium browser scenarios');
   // Browser fixtures reset only this disposable database; authentication stays below production limits.
   await run(
     process.execPath,
@@ -267,8 +289,28 @@ try {
 } catch (error) {
   evidence.result = 'failed';
   evidence.error = error instanceof Error ? error.message : String(error);
-  console.error(evidence.error);
+  console.error(`FAIL ${String(evidence.phase ?? 'setup')}: ${String(evidence.error)}`);
   process.exitCode = 1;
+  if (created) {
+    // Capture only bounded service output/state from the disposable verification stack.
+    // Do not export container environments, request headers, cookies or database records.
+    const diagnostics = await Promise.allSettled([
+      compose(['logs', '--no-color', '--tail', '120', 'web', 'mongo', 'tls'], 30_000),
+      compose(['ps', '--all', '--format', 'json'], 30_000),
+    ]);
+    for (const [index, result] of diagnostics.entries()) {
+      const name = index === 0 ? 'docker-services.log' : 'docker-containers.json';
+      try {
+        if (result.status === 'fulfilled') {
+          await writeFile(`.cache/browser-verification/${name}`, result.value);
+        } else {
+          evidence[`diagnostic_${name}`] = 'Collection failed; original error preserved.';
+        }
+      } catch {
+        evidence[`diagnostic_${name}`] = 'Writing failed; original error preserved.';
+      }
+    }
+  }
 } finally {
   cleaningUp = true;
   const connections = await Promise.allSettled([api?.dispose(), mongoClient?.close()]);
